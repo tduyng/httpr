@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Write},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream}, thread,
 };
 
 struct HttpRequest {
@@ -126,7 +126,9 @@ fn main() {
             match stream {
                 Ok(stream) => {
                     println!("Retrieved a connection");
-                    handle_request(stream)
+                    thread::spawn(move || {
+                        handle_request(stream);
+                    });
                 }
                 Err(e) => {
                     eprintln!("Error: {}", e);
