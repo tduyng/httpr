@@ -1,33 +1,79 @@
 use std::{
     collections::HashMap,
     env,
-    fs::File,
+    fs::{self, File},
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     thread,
 };
 
+#[derive(PartialEq)]
+enum RequestMethod {
+    Get,
+    Post,
+}
+
 struct HttpRequest {
+    method: RequestMethod,
     path: String,
     headers: HashMap<String, String>,
+    body: String,
 }
 
 impl HttpRequest {
-    fn parse_request(lines: Vec<String>) -> Option<Self> {
-        let first_line = lines.first()?;
+    fn parse_request(mut stream: TcpStream) -> Option<Self> {
+        let mut reader = BufReader::new(&mut stream);
+
+        let mut request_lines = Vec::new();
+        for line in reader.by_ref().lines() {
+            let line = line.unwrap();
+            if line.is_empty() {
+                break;
+            }
+            request_lines.push(line);
+        }
+
+        let first_line = request_lines.first()?;
         let mut parts = first_line.split_whitespace();
-        let _method_str = parts.next()?;
+        let method_str = parts.next()?.to_string();
+        let method = match method_str.as_str() {
+            "GET" => RequestMethod::Get,
+            "POST" => RequestMethod::Post,
+            _ => return None,
+        };
         let path = parts.next()?.to_string();
 
         let mut headers = HashMap::new();
-        for line in lines.iter().skip(1) {
+        // Read the request headers
+        for line in &request_lines[1..] {
             if let Some((key, value)) = line.split_once(": ") {
                 headers.insert(key.to_string(), value.to_string());
             }
         }
 
-        Some(Self { path, headers })
+        // Read the request body
+        let mut body = String::new();
+        if method == RequestMethod::Post {
+            if let Some(content_length) = headers
+                .get("Content-Length")
+                .and_then(|len| len.parse::<usize>().ok())
+            {
+                reader
+                    .take(content_length as u64)
+                    .read_to_string(&mut body)
+                    .unwrap();
+            } else {
+                reader.read_to_string(&mut body).unwrap(); // Read until end of stream
+            }
+        }
+
+        Some(Self {
+            method,
+            path,
+            headers,
+            body,
+        })
     }
 }
 
@@ -151,20 +197,54 @@ fn handle_file_request(directory: &str, path: &str) -> HttpResponse {
     handle_not_found_request()
 }
 
-fn handle_request(mut stream: TcpStream, directory: &str) {
-    let request = BufReader::new(&stream)
-        .lines()
-        .map(|result| result.expect("Failed to read request line"))
-        .take_while(|line| !line.is_empty())
-        .collect::<Vec<_>>();
+fn handle_post_file_request(directory: &str, path: &str, body: String) -> HttpResponse {
+    let filename = path.trim_start_matches("/files/");
+    let file_path = Path::new(&directory).join(filename);
 
-    if let Some(http_request) = HttpRequest::parse_request(request) {
-        let response = match http_request.path.as_str() {
-            path if path.starts_with("/echo/") => handle_echo_request(path),
-            path if path.starts_with("/files/") => handle_file_request(directory, path),
-            "/user-agent" => handle_user_agent_request(&http_request.headers),
-            "/" => handle_root_request(),
-            _ => handle_not_found_request(),
+    if !file_path.parent().unwrap().exists() {
+        if let Err(err) = fs::create_dir_all(file_path.parent().unwrap()) {
+            eprintln!("Error creating parent directories: {}", err);
+        }
+    }
+
+    if !file_path.exists() {
+        if let Err(err) = File::create(&file_path) {
+            eprintln!("Creating new file error: {} - {:?}", err, file_path);
+        }
+    }
+
+    if let Err(err) = fs::write(&file_path, body) {
+        eprintln!("Error writing file: {}", err);
+    }
+
+    HttpResponse {
+        protocol: "HTTP/1.1".to_string(),
+        status_code: 201,
+        status_text: "Created".to_string(),
+        body: None,
+        headers: HashMap::new(),
+        content_type: ContentType::None,
+    }
+}
+
+fn handle_request(mut stream: TcpStream, directory: &str) {
+    let cloned_stream = stream.try_clone().expect("Failed to clone stream");
+
+    if let Some(http_request) = HttpRequest::parse_request(cloned_stream) {
+        let response = match http_request.method {
+            RequestMethod::Get => match http_request.path.as_str() {
+                path if path.starts_with("/echo/") => handle_echo_request(path),
+                path if path.starts_with("/files/") => handle_file_request(directory, path),
+                "/user-agent" => handle_user_agent_request(&http_request.headers),
+                "/" => handle_root_request(),
+                _ => handle_not_found_request(),
+            },
+            RequestMethod::Post => match http_request.path.as_str() {
+                path if path.starts_with("/files/") => {
+                    handle_post_file_request(directory, path, http_request.body)
+                }
+                _ => handle_not_found_request(),
+            },
         };
 
         if let Err(e) = stream.write_all(&response.into_response_string().into_bytes()) {
