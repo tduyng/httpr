@@ -36,14 +36,51 @@ impl HttpResponse {
     }
 }
 
-fn not_found_error(protocol: &str) -> HttpResponse {
+fn not_found_error(protocol: &str, headers: HashMap<String, String>) -> HttpResponse {
     HttpResponse {
         protocol: protocol.to_string(),
         status_code: 404,
         status_text: "Not Found".to_string(),
         body: None,
-        headers: HashMap::new(),
+        headers,
     }
+}
+
+fn response_ok(
+    protocol: &str,
+    headers: HashMap<String, String>,
+    body: Option<String>,
+) -> HttpResponse {
+    HttpResponse {
+        protocol: protocol.to_string(),
+        status_code: 200,
+        status_text: "OK".to_string(),
+        body,
+        headers,
+    }
+}
+
+fn parse_headers(request: Vec<String>) -> (HashMap<String, String>, Option<String>) {
+    let mut headers = HashMap::new();
+
+    let mut user_agent = None;
+    for line in request.iter().skip(1) {  
+        if line.is_empty() {
+            continue;
+        }
+
+        let trimmed_line = line.trim();
+        let mut parts = trimmed_line.splitn(2, ':');
+        let key = parts.next().unwrap().to_string();
+        let value = parts.next().unwrap_or("").trim().to_string();
+
+        if key.to_lowercase() == "user-agent" {  
+            user_agent = Some(value.clone());
+        }
+        headers.insert(key, value);
+    }
+
+    (headers, user_agent)
 }
 
 fn handle_request(mut stream: TcpStream) {
@@ -53,31 +90,24 @@ fn handle_request(mut stream: TcpStream) {
         .take_while(|line| !line.is_empty())
         .collect::<Vec<_>>();
 
-    let fist_line = request.first().unwrap().to_string();
-    let mut line_parts = fist_line.splitn(3, ' '); // Split with limit 3
+    let first_line = request.first().unwrap().to_string();
+    let mut line_parts = first_line.splitn(3, ' '); // Split with limit 3
     let _method = line_parts.next().unwrap();
     let path = line_parts.next().unwrap();
     let protocol = line_parts.next().unwrap();
+    let (headers, user_agent) = parse_headers(request);
 
     let response = match path {
         path if path.starts_with("/echo/") => {
             let text = &path[6..];
-            HttpResponse {
-                protocol: protocol.to_string(),
-                status_code: 200,
-                status_text: "OK".to_string(),
-                body: Some(text.to_string()),
-                headers: HashMap::new(),
-            }
+            response_ok(protocol, headers, Some(text.to_string()))
         }
-        "/" => HttpResponse {
-            protocol: protocol.to_string(),
-            status_code: 200,
-            status_text: "OK".to_string(),
-            body: None,
-            headers: HashMap::new(),
+        "/user-agent" => {
+            let user_agent_value = user_agent.unwrap_or_default();  // Use default empty string if not found
+            response_ok(protocol, headers.clone(), Some(user_agent_value))
         },
-        _ => not_found_error(protocol),
+        "/" => response_ok(protocol, headers, None),
+        _ => not_found_error(protocol, headers),
     };
 
     let response_string = response.into_response_string().unwrap();
