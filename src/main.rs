@@ -1,11 +1,13 @@
 use std::{
     collections::HashMap,
     env,
-    fs::{self, File},
-    io::{BufRead, BufReader, Read, Write},
-    net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
-    thread,
+};
+use tokio::net::TcpListener;
+use tokio::{
+    fs::{self, create_dir_all, File},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    net::TcpStream,
 };
 
 #[derive(PartialEq)]
@@ -22,16 +24,19 @@ struct HttpRequest {
 }
 
 impl HttpRequest {
-    fn parse_request(mut stream: TcpStream) -> Option<Self> {
-        let mut reader = BufReader::new(&mut stream);
-
+    async fn parse_request(stream: &mut TcpStream) -> Option<Self> {
+        let mut reader = BufReader::new(stream);
         let mut request_lines = Vec::new();
-        for line in reader.by_ref().lines() {
-            let line = line.unwrap();
-            if line.is_empty() {
+        loop {
+            let mut line = String::new();
+            let bytes_read = reader.read_line(&mut line).await.unwrap();
+            if bytes_read == 0 {
                 break;
             }
-            request_lines.push(line);
+            if line.trim().is_empty() {
+                break;
+            }
+            request_lines.push(line.trim().to_string());
         }
 
         let first_line = request_lines.first()?;
@@ -59,12 +64,9 @@ impl HttpRequest {
                 .get("Content-Length")
                 .and_then(|len| len.parse::<usize>().ok())
             {
-                reader
-                    .take(content_length as u64)
-                    .read_to_string(&mut body)
-                    .unwrap();
-            } else {
-                reader.read_to_string(&mut body).unwrap(); // Read until end of stream
+                let mut buf = vec![0u8; content_length];
+                reader.read_exact(&mut buf).await.unwrap();
+                body = String::from_utf8(buf).unwrap();
             }
         }
 
@@ -129,7 +131,7 @@ impl HttpResponse {
     }
 }
 
-fn handle_root_request() -> HttpResponse {
+async fn handle_root_request() -> HttpResponse {
     HttpResponse {
         protocol: "HTTP/1.1".to_string(),
         status_code: 200,
@@ -140,7 +142,7 @@ fn handle_root_request() -> HttpResponse {
     }
 }
 
-fn handle_echo_request(path: &str) -> HttpResponse {
+async fn handle_echo_request(path: &str) -> HttpResponse {
     let text = path.trim_start_matches("/echo/");
     HttpResponse {
         protocol: "HTTP/1.1".to_string(),
@@ -152,7 +154,7 @@ fn handle_echo_request(path: &str) -> HttpResponse {
     }
 }
 
-fn handle_user_agent_request(headers: &HashMap<String, String>) -> HttpResponse {
+async fn handle_user_agent_request(headers: &HashMap<String, String>) -> HttpResponse {
     let user_agent = headers.get("User-Agent").cloned().unwrap_or_default();
     HttpResponse {
         protocol: "HTTP/1.1".to_string(),
@@ -164,7 +166,7 @@ fn handle_user_agent_request(headers: &HashMap<String, String>) -> HttpResponse 
     }
 }
 
-fn handle_not_found_request() -> HttpResponse {
+async fn handle_not_found_request() -> HttpResponse {
     HttpResponse {
         protocol: "HTTP/1.1".to_string(),
         status_code: 404,
@@ -175,45 +177,47 @@ fn handle_not_found_request() -> HttpResponse {
     }
 }
 
-fn handle_file_request(directory: &str, path: &str) -> HttpResponse {
+async fn handle_file_request(directory: &str, path: &str) -> HttpResponse {
     let filename = path.trim_start_matches("/files/");
     let mut file_path = PathBuf::from(directory);
     file_path.push(filename);
 
-    if let Ok(mut file) = File::open(file_path) {
-        let mut contents = String::new();
-        if file.read_to_string(&mut contents).is_ok() {
-            return HttpResponse {
-                protocol: "HTTP/1.1".to_string(),
-                status_code: 200,
-                status_text: "OK".to_string(),
-                body: Some(contents),
-                headers: HashMap::new(),
-                content_type: ContentType::ApplicationOctetStream,
-            };
+    match File::open(&file_path).await {
+        Ok(mut file) => {
+            let mut contents = String::new();
+            match file.read_to_string(&mut contents).await {
+                Ok(_) => HttpResponse {
+                    protocol: "HTTP/1.1".to_string(),
+                    status_code: 200,
+                    status_text: "OK".to_string(),
+                    body: Some(contents),
+                    headers: HashMap::new(),
+                    content_type: ContentType::ApplicationOctetStream,
+                },
+                Err(_) => handle_not_found_request().await,
+            }
         }
+        Err(_e) => handle_not_found_request().await,
     }
-
-    handle_not_found_request()
 }
 
-fn handle_post_file_request(directory: &str, path: &str, body: String) -> HttpResponse {
+async fn handle_post_file_request(directory: &str, path: &str, body: String) -> HttpResponse {
     let filename = path.trim_start_matches("/files/");
     let file_path = Path::new(&directory).join(filename);
 
     if !file_path.parent().unwrap().exists() {
-        if let Err(err) = fs::create_dir_all(file_path.parent().unwrap()) {
+        if let Err(err) = create_dir_all(file_path.parent().unwrap()).await {
             eprintln!("Error creating parent directories: {}", err);
         }
     }
 
     if !file_path.exists() {
-        if let Err(err) = File::create(&file_path) {
+        if let Err(err) = File::create(&file_path).await {
             eprintln!("Creating new file error: {} - {:?}", err, file_path);
         }
     }
 
-    if let Err(err) = fs::write(&file_path, body) {
+    if let Err(err) = fs::write(&file_path, body).await {
         eprintln!("Error writing file: {}", err);
     }
 
@@ -227,61 +231,60 @@ fn handle_post_file_request(directory: &str, path: &str, body: String) -> HttpRe
     }
 }
 
-fn handle_request(mut stream: TcpStream, directory: &str) {
-    let cloned_stream = stream.try_clone().expect("Failed to clone stream");
-
-    if let Some(http_request) = HttpRequest::parse_request(cloned_stream) {
+async fn handle_request(mut stream: TcpStream, directory: &str) {
+    if let Some(http_request) = HttpRequest::parse_request(&mut stream).await {
         let response = match http_request.method {
             RequestMethod::Get => match http_request.path.as_str() {
-                path if path.starts_with("/echo/") => handle_echo_request(path),
-                path if path.starts_with("/files/") => handle_file_request(directory, path),
-                "/user-agent" => handle_user_agent_request(&http_request.headers),
-                "/" => handle_root_request(),
-                _ => handle_not_found_request(),
+                path if path.starts_with("/echo/") => handle_echo_request(path).await,
+                path if path.starts_with("/files/") => handle_file_request(directory, path).await,
+                "/user-agent" => handle_user_agent_request(&http_request.headers).await,
+                "/" => handle_root_request().await,
+                _ => handle_not_found_request().await,
             },
             RequestMethod::Post => match http_request.path.as_str() {
                 path if path.starts_with("/files/") => {
-                    handle_post_file_request(directory, path, http_request.body)
+                    handle_post_file_request(directory, path, http_request.body).await
                 }
-                _ => handle_not_found_request(),
+                _ => handle_not_found_request().await,
             },
         };
 
-        if let Err(e) = stream.write_all(&response.into_response_string().into_bytes()) {
+        if let Err(e) = stream
+            .write_all(&response.into_response_string().into_bytes())
+            .await
+        {
             eprintln!("Failed to write HttpResponse: {}", e);
         }
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = env::args().collect();
 
     let port = "4221";
-    if let Ok(listener) = TcpListener::bind(format!("127.0.0.1:{}", port)) {
-        println!("Connection to port: {}", port);
+    let listener = TcpListener::bind("127.0.0.1:4221").await.unwrap();
+    println!("Connection to port: {}", port);
 
-        let directory = if let Some(dir) = args.get(2) {
-            dir.clone()
-        } else {
-            eprintln!("No directory argument provided. Using default directory.");
-            String::from("default")
-        };
+    let directory = if let Some(dir) = args.get(2) {
+        dir.clone()
+    } else {
+        eprintln!("No directory argument provided. Using default directory.");
+        String::from("default")
+    };
 
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    println!("Retrieved a connection");
-                    let directory = directory.clone();
-                    thread::spawn(move || {
-                        handle_request(stream, &directory);
-                    });
-                }
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                }
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                println!("Retrieved a connection");
+                let directory = directory.clone();
+                tokio::spawn(async move {
+                    handle_request(stream, &directory).await;
+                });
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
             }
         }
-    } else {
-        eprintln!("Failed to make connection");
     }
 }
