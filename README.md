@@ -8,12 +8,36 @@ Welcome to the "Build Your Own HTTP Server" Challenge repository for Rust soluti
 
 This repository serves as a my Rust solutions to the ["Build Your Own HTTP server" Challenge](https://app.codecrafters.io/courses/http-server/overview).
 
-HTTP (Hypertext Transfer Protocol) is the backbone of the web, enabling communication between clients and servers.
+HTTP is the backbone of the web, enabling communication between clients and servers.
 In this challenge, you'll embark on an exciting journey to build your very own HTTP/1.1 server in Rust.
 By completing this challenge, you'll gain valuable insights into TCP servers, HTTP request syntax, and more.
 
-Each commit that I put here corresponds to each step of the challenge.
+>Each commit that I put here corresponds to each step of the challenge.
 With each step, you'll gradually enhance your server's capabilities and gain a deeper understanding of how web servers operate under the hood.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+Note: If you're viewing this repo on GitHub, head over to
+[codecrafters.io](https://codecrafters.io) to try this challenge.
+
+## Structure of project:
+```bash
+❯ tree         
+.
+├── lib.rs
+├── main.rs
+├── request
+│  └── mod.rs
+├── response
+│  └── mod.rs
+├── routes
+│  ├── echo.rs
+│  ├── files.rs
+│  ├── mod.rs
+│  ├── not_found.rs
+│  ├── root.rs
+│  └── user_agent.rs
+└── server.rs
+```
+
+## TODO
+- [ ] Unit tests
+- [ ] Integration tests
