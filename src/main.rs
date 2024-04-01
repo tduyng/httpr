@@ -1,9 +1,31 @@
 use std::{
     collections::HashMap,
-    error::Error,
     io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
 };
+
+struct HttpRequest {
+    path: String,
+    headers: HashMap<String, String>,
+}
+
+impl HttpRequest {
+    fn parse_request(lines: Vec<String>) -> Option<Self> {
+        let first_line = lines.first()?;
+        let mut parts = first_line.split_whitespace();
+        let _method_str = parts.next()?;
+        let path = parts.next()?.to_string();
+
+        let mut headers = HashMap::new();
+        for line in lines.iter().skip(1) {
+            if let Some((key, value)) = line.split_once(": ") {
+                headers.insert(key.to_string(), value.to_string());
+            }
+        }
+
+        Some(Self { path, headers })
+    }
+}
 
 struct HttpResponse {
     protocol: String,
@@ -14,73 +36,58 @@ struct HttpResponse {
 }
 
 impl HttpResponse {
-    fn into_response_string(self) -> Result<String, Box<dyn Error>> {
+    fn into_response_string(self) -> String {
         let mut response = format!(
             "{} {} {}\r\n",
             self.protocol, self.status_code, self.status_text
         );
 
-        for (key, value) in self.headers {
+        for (key, value) in &self.headers {
             response.push_str(&format!("{}: {}\r\n", key, value))
         }
 
-        if let Some(body) = self.body {
+        if let Some(body) = &self.body {
             response.push_str("Content-Type: text/plain\r\n");
             response.push_str(&format!("Content-Length: {}\r\n\r\n", body.len()));
-            response.push_str(&body);
+            response.push_str(body);
         } else {
             response.push_str("\r\n");
         }
 
-        Ok(response)
+        response
     }
 }
 
-fn not_found_error(protocol: &str, headers: HashMap<String, String>) -> HttpResponse {
+fn handle_echo_request(path: &str) -> HttpResponse {
+    let text = &path[6..];
     HttpResponse {
-        protocol: protocol.to_string(),
+        protocol: "HTTP/1.1".to_string(),
+        status_code: 200,
+        status_text: "OK".to_string(),
+        body: Some(text.to_string()),
+        headers: HashMap::new(),
+    }
+}
+
+fn handle_user_agent_request(headers: &HashMap<String, String>) -> HttpResponse {
+    let user_agent = headers.get("User-Agent").cloned().unwrap_or_default();
+    HttpResponse {
+        protocol: "HTTP/1.1".to_string(),
+        status_code: 200,
+        status_text: "OK".to_string(),
+        body: Some(user_agent),
+        headers: HashMap::new(),
+    }
+}
+
+fn handle_not_found_request() -> HttpResponse {
+    HttpResponse {
+        protocol: "HTTP/1.1".to_string(),
         status_code: 404,
         status_text: "Not Found".to_string(),
         body: None,
-        headers,
+        headers: HashMap::new(),
     }
-}
-
-fn response_ok(
-    protocol: &str,
-    headers: HashMap<String, String>,
-    body: Option<String>,
-) -> HttpResponse {
-    HttpResponse {
-        protocol: protocol.to_string(),
-        status_code: 200,
-        status_text: "OK".to_string(),
-        body,
-        headers,
-    }
-}
-
-fn parse_headers(request: Vec<String>) -> (HashMap<String, String>, Option<String>) {
-    let mut headers = HashMap::new();
-
-    let mut user_agent = None;
-    for line in request.iter().skip(1) {  
-        if line.is_empty() {
-            continue;
-        }
-
-        let trimmed_line = line.trim();
-        let mut parts = trimmed_line.splitn(2, ':');
-        let key = parts.next().unwrap().to_string();
-        let value = parts.next().unwrap_or("").trim().to_string();
-
-        if key.to_lowercase() == "user-agent" {  
-            user_agent = Some(value.clone());
-        }
-        headers.insert(key, value);
-    }
-
-    (headers, user_agent)
 }
 
 fn handle_request(mut stream: TcpStream) {
@@ -90,49 +97,43 @@ fn handle_request(mut stream: TcpStream) {
         .take_while(|line| !line.is_empty())
         .collect::<Vec<_>>();
 
-    let first_line = request.first().unwrap().to_string();
-    let mut line_parts = first_line.splitn(3, ' '); // Split with limit 3
-    let _method = line_parts.next().unwrap();
-    let path = line_parts.next().unwrap();
-    let protocol = line_parts.next().unwrap();
-    let (headers, user_agent) = parse_headers(request);
+    if let Some(http_request) = HttpRequest::parse_request(request) {
+        let response = match http_request.path.as_str() {
+            path if path.starts_with("/echo/") => handle_echo_request(path),
+            "/user-agent" => handle_user_agent_request(&http_request.headers),
+            "/" => HttpResponse {
+                protocol: "HTTP/1.1".to_string(),
+                status_code: 200,
+                status_text: "OK".to_string(),
+                body: None,
+                headers: HashMap::new(),
+            },
+            _ => handle_not_found_request(),
+        };
 
-    let response = match path {
-        path if path.starts_with("/echo/") => {
-            let text = &path[6..];
-            response_ok(protocol, headers, Some(text.to_string()))
+        if let Err(e) = stream.write_all(&response.into_response_string().into_bytes()) {
+            eprintln!("Failed to write HttpResponse: {}", e);
         }
-        "/user-agent" => {
-            let user_agent_value = user_agent.unwrap_or_default();  // Use default empty string if not found
-            response_ok(protocol, headers.clone(), Some(user_agent_value))
-        },
-        "/" => response_ok(protocol, headers, None),
-        _ => not_found_error(protocol, headers),
-    };
-
-    let response_string = response.into_response_string().unwrap();
-
-    stream
-        .write_all(&response_string.into_bytes())
-        .expect("Failed to write HttpResponse");
+    }
 }
 
 fn main() {
     let port = "4221";
-    let listener =
-        TcpListener::bind(format!("127.0.0.1:{port}")).expect("Failed to make connection");
-    println!("Connection to port: {}", port);
+    if let Ok(listener) = TcpListener::bind(format!("127.0.0.1:{}", port)) {
+        println!("Connection to port: {}", port);
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                println!("Retrieved a connection");
-
-                handle_request(stream)
-            }
-            Err(e) => {
-                println!("Error: {}", e);
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    println!("Retrieved a connection");
+                    handle_request(stream)
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                }
             }
         }
+    } else {
+        eprintln!("Failed to make connection");
     }
 }
