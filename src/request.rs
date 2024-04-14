@@ -27,47 +27,72 @@ impl Request {
             body: Vec::new(),
         }
     }
-
     pub async fn parse(stream: Arc<Mutex<TcpStream>>) -> Result<Self> {
         let mut buf = BytesMut::new();
         let mut stream = stream.lock().await;
 
-        // Read from the stream until a complete HTTP request is received
         loop {
             let n = stream.read_buf(&mut buf).await?;
             if n == 0 {
                 return Err("Connection closed".into());
             }
 
-            let mut headers = [httparse::EMPTY_HEADER; 16];
-            let mut request = httparse::Request::new(&mut headers);
-            let status = request.parse(&buf)?;
+            if let Some(request) = Self::parse_complete_request(&mut buf)? {
+                return Ok(request);
+            }
+        }
+    }
 
-            match status {
-                httparse::Status::Complete(amt) => {
-                    let parsed_bytes = amt;
-                    let method = request.method.unwrap().to_string();
-                    let path = request.path.unwrap().to_string();
-                    let version = request.version.unwrap();
-                    let parsed_headers: Vec<(String, Vec<u8>)> = request
-                        .headers
-                        .iter()
-                        .map(|h| (h.name.to_string(), h.value.to_vec()))
-                        .collect();
-                    let body_start = buf.len() - parsed_bytes;
-                    let body = buf.split_to(body_start).to_vec();
+    fn parse_complete_request(buf: &mut BytesMut) -> Result<Option<Self>> {
+        let mut headers = [httparse::EMPTY_HEADER; 16];
+        let mut request = httparse::Request::new(&mut headers);
+        let status = request.parse(buf)?;
 
-                    return Ok(Request {
+        match status {
+            httparse::Status::Complete(_amt) => {
+                let method = request.method.unwrap().to_string();
+                let path = request.path.unwrap().to_string();
+                let version = request.version.unwrap();
+                let parsed_headers: Vec<(String, Vec<u8>)> = request
+                    .headers
+                    .iter()
+                    .map(|h| (h.name.to_string(), h.value.to_vec()))
+                    .collect();
+
+                let content_length: Option<usize> =
+                    parsed_headers.iter().find_map(|(name, value)| {
+                        if name.to_lowercase() == "content-length" {
+                            Some(std::str::from_utf8(value).ok()?.parse().ok()?)
+                        } else {
+                            None
+                        }
+                    });
+
+                let content_length = content_length.unwrap_or(0);
+                // I use the \r\n\r\n sequence to identify the end of the headers and the start of the body
+                let headers_end_index = buf
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                    .unwrap_or(0);
+
+                if headers_end_index > 0 && buf.len() >= headers_end_index + 4 + content_length {
+                    let body_bytes = buf.split_to(headers_end_index + 4 + content_length);
+                    let body_slice = &body_bytes[headers_end_index + 4..];
+                    let body_vec = body_slice.to_vec();
+
+                    return Ok(Some(Request {
                         method,
                         path,
                         version,
                         headers: parsed_headers,
-                        body,
-                    });
+                        body: body_vec,
+                    }));
                 }
-                httparse::Status::Partial => {}
             }
+            httparse::Status::Partial => {}
         }
+
+        Ok(None)
     }
 }
 
