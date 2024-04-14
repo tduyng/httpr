@@ -18,6 +18,7 @@ edition = "2021"
 #
 # DON'T EDIT THIS!
 [dependencies]
+bytes = "1.6.0"
 httparse = "1.8.0"
 tokio = { version = "1.23.0", features = ["full"] } # async networking
 
