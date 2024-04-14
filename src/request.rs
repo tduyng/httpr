@@ -1,5 +1,5 @@
 use crate::{CliArgs, Result};
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use std::{fmt, sync::Arc};
 use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
 
@@ -8,6 +8,7 @@ pub struct Request {
     pub path: String,
     pub version: u8,
     pub headers: Vec<(String, Vec<u8>)>,
+    pub body: Vec<u8>,
 }
 
 impl Default for Request {
@@ -23,6 +24,7 @@ impl Request {
             path: String::new(),
             version: 1,
             headers: Vec::new(),
+            body: Vec::new(),
         }
     }
 
@@ -52,15 +54,15 @@ impl Request {
                         .iter()
                         .map(|h| (h.name.to_string(), h.value.to_vec()))
                         .collect();
-
-                    // Advance the buffer to remove the parsed data
-                    buf.advance(parsed_bytes);
+                    let body_start = buf.len() - parsed_bytes;
+                    let body = buf.split_to(body_start).to_vec();
 
                     return Ok(Request {
                         method,
                         path,
                         version,
                         headers: parsed_headers,
+                        body,
                     });
                 }
                 httparse::Status::Partial => {}
