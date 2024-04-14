@@ -16,7 +16,7 @@ async fn main() {
 
                 tokio::spawn(async move {
                     if let Ok(request) = Request::parse(stream.clone()).await {
-                        let response = match handle_routes(&request.path).await {
+                        let response = match handle_routes(&request).await {
                             Ok(response) => response,
                             Err(err) => {
                                 eprintln!("Error handling request: {}", err);
