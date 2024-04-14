@@ -1,6 +1,6 @@
 use crate::Result;
-use bytes::BytesMut;
-use std::{fmt, io, sync::Arc};
+use bytes::{Buf, BytesMut};
+use std::{fmt, sync::Arc};
 use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
 
 pub struct Request {
@@ -29,39 +29,42 @@ impl Request {
     pub async fn parse(stream: Arc<Mutex<TcpStream>>) -> Result<Self> {
         let mut buf = BytesMut::new();
         let mut stream = stream.lock().await;
-        stream.read_buf(&mut buf).await?;
-        let mut headers = [httparse::EMPTY_HEADER; 16];
-        let mut request = httparse::Request::new(&mut headers);
-        let status = request
-            .parse(&buf)
-            .map_err(|e| {
-                let msg = format!("failed to parse http request: {:?}", e);
-                io::Error::new(io::ErrorKind::Other, msg)
-            })
-            .unwrap();
 
-        match status {
-            httparse::Status::Complete(amt) => {
-                let method = request.method.unwrap().to_string();
-                let path = request.path.unwrap().to_string();
-                let version = request.version.unwrap();
-
-                let parsed_headers: Vec<(String, Vec<u8>)> = request
-                    .headers
-                    .iter()
-                    .map(|h| (h.name.to_string(), h.value.to_vec()))
-                    .collect();
-
-                let _ = buf.split_to(amt);
-
-                Ok(Request {
-                    method,
-                    path,
-                    version,
-                    headers: parsed_headers,
-                })
+        // Read from the stream until a complete HTTP request is received
+        loop {
+            let n = stream.read_buf(&mut buf).await?;
+            if n == 0 {
+                return Err("Connection closed".into());
             }
-            httparse::Status::Partial => Err("Partial request received".into()),
+
+            let mut headers = [httparse::EMPTY_HEADER; 16];
+            let mut request = httparse::Request::new(&mut headers);
+            let status = request.parse(&buf)?;
+
+            match status {
+                httparse::Status::Complete(amt) => {
+                    let parsed_bytes = amt;
+                    let method = request.method.unwrap().to_string();
+                    let path = request.path.unwrap().to_string();
+                    let version = request.version.unwrap();
+                    let parsed_headers: Vec<(String, Vec<u8>)> = request
+                        .headers
+                        .iter()
+                        .map(|h| (h.name.to_string(), h.value.to_vec()))
+                        .collect();
+
+                    // Advance the buffer to remove the parsed data
+                    buf.advance(parsed_bytes);
+
+                    return Ok(Request {
+                        method,
+                        path,
+                        version,
+                        headers: parsed_headers,
+                    });
+                }
+                httparse::Status::Partial => {}
+            }
         }
     }
 }
