@@ -1,12 +1,22 @@
+use clap::Parser;
 use http_server_starter_rust::{request::Request, response::Response, routes::handle_routes};
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::Mutex};
 
+#[derive(Parser, Debug)]
+struct CliArgs {
+    #[clap(short, long)]
+    directory: String,
+}
+
 #[tokio::main]
 async fn main() {
+    let args = CliArgs::parse();
     let port = 4221;
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
     println!("Server running on port {}", port);
+
+    // How to handle Get /files.....
 
     loop {
         match listener.accept().await {

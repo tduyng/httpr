@@ -1,6 +1,6 @@
 use crate::{request::Request, response::Response, Result};
 
-pub async fn get_echo(request: &Request) -> Result<Response> {
+pub async fn get_files(request: &Request) -> Result<Response> {
     let path = &request.path;
     let random_string = path.trim_start_matches("/echo/");
 

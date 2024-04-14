@@ -1,6 +1,6 @@
 use crate::{request::Request, response::Response, Result};
 
-pub async fn handle_user_agent(request: &Request) -> Result<Response> {
+pub async fn get_user_agent(request: &Request) -> Result<Response> {
     let user_agent = match request
         .headers
         .iter()
