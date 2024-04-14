@@ -6,7 +6,7 @@
 #
 # DON'T EDIT THIS!
 [package]
-name = "httpr"
+name = "http-server-starter-rust"
 version = "0.1.0"
 edition = "2021"
 
@@ -18,5 +18,6 @@ edition = "2021"
 #
 # DON'T EDIT THIS!
 [dependencies]
+httparse = "1.8.0"
 tokio = { version = "1.23.0", features = ["full"] } # async networking
 

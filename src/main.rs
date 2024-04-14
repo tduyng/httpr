@@ -1,22 +1,29 @@
-use std::env;
-
-use httpr::server;
-use tokio::net::TcpListener;
+use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
+    let port = 4221;
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .unwrap();
+    println!("Server running on port {}", port);
 
-    let port = "4221";
-    let listener = TcpListener::bind("127.0.0.1:4221").await.unwrap();
-    println!("Connection to port: {}", port);
-
-    let directory = if let Some(dir) = args.get(2) {
-        dir.clone()
-    } else {
-        eprintln!("No directory argument provided. Using default directory.");
-        String::from("default")
-    };
-
-    server::run(listener, directory).await;
+    loop {
+        match listener.accept().await {
+            Ok((mut stream, _)) => {
+                println!("Received a connection");
+                tokio::spawn(async move {
+                    if let Err(e) = stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nHello World")
+                        .await
+                    {
+                        eprintln!("Failed to write to socket: {}", e);
+                    }
+                });
+            }
+            Err(e) => {
+                eprintln!("Error accepting connection: {}", e);
+            }
+        }
+    }
 }
