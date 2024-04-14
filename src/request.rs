@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::{CliArgs, Result};
 use bytes::{Buf, BytesMut};
 use std::{fmt, sync::Arc};
 use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
@@ -72,5 +72,16 @@ impl Request {
 impl fmt::Debug for Request {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<HTTP Request {} {}", self.method, self.path)
+    }
+}
+
+pub struct RequestContext<'a> {
+    pub request: &'a Request,
+    pub args: &'a CliArgs,
+}
+
+impl<'a> RequestContext<'a> {
+    pub fn new(request: &'a Request, args: &'a CliArgs) -> Self {
+        RequestContext { request, args }
     }
 }

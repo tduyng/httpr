@@ -1,13 +1,12 @@
 use clap::Parser;
-use http_server_starter_rust::{request::Request, response::Response, routes::handle_routes};
+use http_server_starter_rust::{
+    request::{Request, RequestContext},
+    response::Response,
+    routes::handle_routes,
+    CliArgs,
+};
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::Mutex};
-
-#[derive(Parser, Debug)]
-struct CliArgs {
-    #[clap(short, long)]
-    directory: String,
-}
 
 #[tokio::main]
 async fn main() {
@@ -16,17 +15,18 @@ async fn main() {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
     println!("Server running on port {}", port);
 
-    // How to handle Get /files.....
-
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
                 println!("Received a connection");
                 let stream = Arc::new(Mutex::new(stream));
+                let args = args.clone();
 
                 tokio::spawn(async move {
                     if let Ok(request) = Request::parse(stream.clone()).await {
-                        let response = match handle_routes(&request).await {
+                        let request_context = RequestContext::new(&request, &args);
+
+                        let response = match handle_routes(&request_context).await {
                             Ok(response) => response,
                             Err(err) => {
                                 eprintln!("Error handling request: {}", err);
