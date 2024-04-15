@@ -11,6 +11,6 @@ async fn main() {
 
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
     info!("Server running on port {}", port);
-
-    Server::start_server(listener).await;
+    let server = Server::new();
+    _ = server.start_server(listener).await;
 }
