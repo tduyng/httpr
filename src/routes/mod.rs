@@ -1,20 +1,18 @@
+use crate::error::{not_found, ServerError};
 use crate::request::RequestContext;
 use crate::response::Response;
-use crate::Result;
 
 mod echo;
 mod files;
-mod not_found;
 mod root;
 mod user_agent;
 
 pub use echo::*;
 pub use files::*;
-pub use not_found::*;
 pub use root::*;
 pub use user_agent::*;
 
-pub async fn handle_routes(context: &RequestContext<'_>) -> Result<Response> {
+pub async fn handle_routes(context: &RequestContext<'_>) -> Result<Response, ServerError> {
     match (
         context.request.method.as_str(),
         context.request.path.to_lowercase().as_str(),
@@ -24,6 +22,6 @@ pub async fn handle_routes(context: &RequestContext<'_>) -> Result<Response> {
         ("GET", "/user-agent") => get_user_agent(context.request).await,
         ("GET", "/") => get_root().await,
         ("POST", p) if p.starts_with("/files/") => post_files(context).await,
-        _ => not_found().await,
+        _ => Ok(not_found()),
     }
 }

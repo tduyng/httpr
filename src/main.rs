@@ -1,7 +1,7 @@
 use clap::Parser;
 use http_server_starter_rust::{
+    error::{bad_gateway, forbidden, internal_server_error, not_found, unauthorized, ServerError},
     request::{Request, RequestContext},
-    response::Response,
     routes::handle_routes,
     CliArgs,
 };
@@ -26,20 +26,26 @@ async fn main() {
                     if let Ok(request) = Request::parse(stream.clone()).await {
                         let request_context = RequestContext::new(&request, &args);
 
-                        let response = match handle_routes(&request_context).await {
-                            Ok(response) => response,
+                        match handle_routes(&request_context).await {
+                            Ok(response) => {
+                                if let Err(e) = response.write_response(stream.clone()).await {
+                                    eprintln!("Failed to write to socket: {}", e);
+                                }
+                            }
                             Err(err) => {
                                 eprintln!("Error handling request: {}", err);
-                                Response::new()
-                                    .body_str("Internal Server Error")
-                                    .status_code(500, "Internal Server Error")
-                                    .header("Content-Type", "text/plain")
+                                let response = match err {
+                                    ServerError::NotFound => not_found(),
+                                    ServerError::Unauthorized => unauthorized(),
+                                    ServerError::Forbidden => forbidden(),
+                                    ServerError::BadGateway => bad_gateway(),
+                                    _ => internal_server_error(),
+                                };
+                                if let Err(e) = response.write_response(stream.clone()).await {
+                                    eprintln!("Failed to write error response to socket: {}", e);
+                                }
                             }
                         };
-
-                        if let Err(e) = response.write_response(stream.clone()).await {
-                            eprintln!("Failed to write to socket: {}", e);
-                        }
                     } else {
                         eprintln!("Failed to read from socket");
                     }

@@ -1,7 +1,7 @@
+use crate::error::ServerError;
 use crate::response::Response;
-use crate::Result;
 
-pub async fn get_root() -> Result<Response> {
+pub async fn get_root() -> Result<Response, ServerError> {
     Ok(Response::new()
         .body_str("Hello World!")
         .status_code(200, "OK")

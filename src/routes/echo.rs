@@ -1,6 +1,6 @@
-use crate::{request::Request, response::Response, Result};
+use crate::{error::ServerError, request::Request, response::Response};
 
-pub async fn get_echo(request: &Request) -> Result<Response> {
+pub async fn get_echo(request: &Request) -> Result<Response, ServerError> {
     let path = &request.path;
     let random_string = path.trim_start_matches("/echo/");
 

@@ -1,13 +1,13 @@
-use crate::{request::Request, response::Response, Result};
+use crate::{error::ServerError, request::Request, response::Response};
 
-pub async fn get_user_agent(request: &Request) -> Result<Response> {
+pub async fn get_user_agent(request: &Request) -> Result<Response, ServerError> {
     let user_agent = match request
         .headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("User-Agent"))
     {
         Some((_, value)) => String::from_utf8_lossy(value).into_owned(),
-        None => return Err("User-Agent header not found".into()),
+        None => return Err(ServerError::NotFound),
     };
 
     Ok(Response::new()

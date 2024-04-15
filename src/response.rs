@@ -1,10 +1,11 @@
-use crate::Result;
 use bytes::BytesMut;
 use std::{
     fmt::{self, Write},
     sync::Arc,
 };
 use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
+
+use crate::error::ServerError;
 
 pub struct Response {
     status_code: u32,
@@ -50,29 +51,32 @@ impl Response {
         self
     }
 
-    pub async fn write_response(&self, stream: Arc<Mutex<TcpStream>>) -> Result<()> {
+    pub async fn write_response(&self, stream: Arc<Mutex<TcpStream>>) -> Result<(), ServerError> {
         let mut buf = BytesMut::new();
-        write!(
+        _ = write!(
             FastWrite(&mut buf),
             "HTTP/1.1 {} {}\r\n",
             self.status_code,
             self.status_message
-        )?;
+        );
 
         for (name, value) in &self.headers {
-            write!(FastWrite(&mut buf), "{}: {}\r\n", name, value)?;
+            _ = write!(FastWrite(&mut buf), "{}: {}\r\n", name, value);
         }
 
-        write!(
+        _ = write!(
             FastWrite(&mut buf),
             "Content-Length: {}\r\n",
             self.body.len()
-        )?;
-        write!(FastWrite(&mut buf), "\r\n")?;
+        );
+        _ = write!(FastWrite(&mut buf), "\r\n");
 
         buf.extend_from_slice(&self.body);
         let mut stream = stream.lock().await;
-        stream.write_all(&buf).await?;
+        _ = stream.write_all(&buf).await.map_err(|e| {
+            eprintln!("Failed to write response: {}", e);
+            ServerError::IoError(e)
+        });
 
         Ok(())
     }

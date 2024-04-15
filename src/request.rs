@@ -1,4 +1,4 @@
-use crate::{CliArgs, Result};
+use crate::{error::ServerError, CliArgs};
 use bytes::BytesMut;
 use std::{fmt, sync::Arc};
 use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
@@ -27,14 +27,14 @@ impl Request {
             body: Vec::new(),
         }
     }
-    pub async fn parse(stream: Arc<Mutex<TcpStream>>) -> Result<Self> {
+    pub async fn parse(stream: Arc<Mutex<TcpStream>>) -> Result<Self, ServerError> {
         let mut buf = BytesMut::new();
         let mut stream = stream.lock().await;
 
         loop {
             let n = stream.read_buf(&mut buf).await?;
             if n == 0 {
-                return Err("Connection closed".into());
+                return Err(ServerError::StreamError("Connection closed".to_string()));
             }
 
             if let Some(request) = Self::parse_complete_request(&mut buf)? {
@@ -43,13 +43,13 @@ impl Request {
         }
     }
 
-    fn parse_complete_request(buf: &mut BytesMut) -> Result<Option<Self>> {
+    fn parse_complete_request(buf: &mut BytesMut) -> Result<Option<Self>, ServerError> {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut request = httparse::Request::new(&mut headers);
-        let status = request.parse(buf)?;
+        let status = request.parse(buf);
 
         match status {
-            httparse::Status::Complete(_amt) => {
+            Ok(httparse::Status::Complete(_amt)) => {
                 let method = request.method.unwrap().to_string();
                 let path = request.path.unwrap().to_string();
                 let version = request.version.unwrap();
@@ -89,7 +89,8 @@ impl Request {
                     }));
                 }
             }
-            httparse::Status::Partial => {}
+            Ok(httparse::Status::Partial) => {}
+            Err(_) => return Err(ServerError::ParseError("Error parsing request".into())),
         }
 
         Ok(None)

@@ -1,7 +1,7 @@
-use crate::{request::RequestContext, response::Response, Result};
+use crate::{error::ServerError, request::RequestContext, response::Response};
 use std::{fs, path::Path};
 
-pub async fn get_files(context: &RequestContext<'_>) -> Result<Response> {
+pub async fn get_files(context: &RequestContext<'_>) -> Result<Response, ServerError> {
     let filename = context.request.path.trim_start_matches("/files/");
     let file_path = Path::new(&context.args.directory).join(filename);
 
@@ -22,7 +22,7 @@ pub async fn get_files(context: &RequestContext<'_>) -> Result<Response> {
     }
 }
 
-pub async fn post_files(context: &RequestContext<'_>) -> Result<Response> {
+pub async fn post_files(context: &RequestContext<'_>) -> Result<Response, ServerError> {
     let filename = context.request.path.trim_start_matches("/files/");
     let file_path = Path::new(&context.args.directory).join(filename);
     let file_content = context.request.body.clone();
