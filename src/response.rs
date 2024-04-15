@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::error::ServerError;
 
@@ -60,11 +60,16 @@ impl Response {
             self.status_code,
             self.status_message
         )
-        .map_err(Ok::<fmt::Error, ServerError>);
+        .map_err(|e| {
+            warn!("Failed to write status line: {}", e);
+            Ok::<fmt::Error, ServerError>(e)
+        });
 
         for (name, value) in &self.headers {
-            _ = write!(FastWrite(&mut buf), "{}: {}\r\n", name, value)
-                .map_err(Ok::<fmt::Error, ServerError>);
+            _ = write!(FastWrite(&mut buf), "{}: {}\r\n", name, value).map_err(|e| {
+                warn!("Failed to write header: {}", e);
+                Ok::<fmt::Error, ServerError>(e)
+            });
         }
 
         _ = write!(
@@ -72,9 +77,15 @@ impl Response {
             "Content-Length: {}\r\n",
             self.body.len()
         )
-        .map_err(Ok::<fmt::Error, ServerError>);
+        .map_err(|e| {
+            warn!("Failed to write content length: {}", e);
+            Ok::<fmt::Error, ServerError>(e)
+        });
 
-        _ = write!(FastWrite(&mut buf), "\r\n").map_err(Ok::<fmt::Error, ServerError>);
+        _ = write!(FastWrite(&mut buf), "\r\n").map_err(|e| {
+            warn!("Failed to write new line after headers: {}", e);
+            Ok::<fmt::Error, ServerError>(e)
+        });
 
         buf.extend_from_slice(&self.body);
 
