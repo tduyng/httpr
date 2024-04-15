@@ -5,6 +5,7 @@ use crate::response::Response;
 #[derive(Debug)]
 pub enum ServerError {
     IoError(io::Error),
+    FmtError(fmt::Error),
     ParseError(String),
     NotFound,
     Unauthorized,
@@ -29,6 +30,7 @@ impl fmt::Display for ServerError {
             ServerError::Forbidden => write!(f, "403 Forbidden"),
             ServerError::BadGateway => write!(f, "502 Bad Gateway"),
             ServerError::IoError(err) => write!(f, "IO error: {}", err),
+            ServerError::FmtError(err) => write!(f, "Fmt error: {}", err),
             ServerError::ParseError(msg) => write!(f, "Parse error: {}", msg),
             ServerError::StreamError(msg) => write!(f, "Stream error: {}", msg),
         }

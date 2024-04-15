@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
+use tracing::{error, info};
 
 use crate::error::ServerError;
 
@@ -58,26 +59,32 @@ impl Response {
             "HTTP/1.1 {} {}\r\n",
             self.status_code,
             self.status_message
-        );
+        )
+        .map_err(Ok::<fmt::Error, ServerError>);
 
         for (name, value) in &self.headers {
-            _ = write!(FastWrite(&mut buf), "{}: {}\r\n", name, value);
+            _ = write!(FastWrite(&mut buf), "{}: {}\r\n", name, value)
+                .map_err(Ok::<fmt::Error, ServerError>);
         }
 
         _ = write!(
             FastWrite(&mut buf),
             "Content-Length: {}\r\n",
             self.body.len()
-        );
-        _ = write!(FastWrite(&mut buf), "\r\n");
+        )
+        .map_err(Ok::<fmt::Error, ServerError>);
+
+        _ = write!(FastWrite(&mut buf), "\r\n").map_err(Ok::<fmt::Error, ServerError>);
 
         buf.extend_from_slice(&self.body);
-        let mut stream = stream.lock().await;
-        _ = stream.write_all(&buf).await.map_err(|e| {
-            eprintln!("Failed to write response: {}", e);
-            ServerError::IoError(e)
-        });
 
+        let mut stream = stream.lock().await;
+        stream.write_all(&buf).await.map_err(|e| {
+            error!("Failed to write response: {}", e);
+            ServerError::IoError(e)
+        })?;
+
+        info!("Response sent successfully");
         Ok(())
     }
 }

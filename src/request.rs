@@ -2,6 +2,7 @@ use crate::{error::ServerError, CliArgs};
 use bytes::BytesMut;
 use std::{fmt, sync::Arc};
 use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
+use tracing::{error, info};
 
 pub struct Request {
     pub method: String,
@@ -34,10 +35,18 @@ impl Request {
         loop {
             let n = stream.read_buf(&mut buf).await?;
             if n == 0 {
+                error!("Connection closed");
                 return Err(ServerError::StreamError("Connection closed".to_string()));
             }
 
             if let Some(request) = Self::parse_complete_request(&mut buf)? {
+                info!(
+                    "Request received: method={}, path={}, headers={:?}, body={}",
+                    request.method,
+                    request.path,
+                    format_headers(&request.headers),
+                    String::from_utf8_lossy(&request.body)
+                );
                 return Ok(request);
             }
         }
@@ -112,4 +121,21 @@ impl<'a> RequestContext<'a> {
     pub fn new(request: &'a Request, args: &'a CliArgs) -> Self {
         RequestContext { request, args }
     }
+}
+
+fn format_headers(headers: &[(String, Vec<u8>)]) -> String {
+    let mut formatted_headers = String::new();
+    for (name, value) in headers {
+        if let Ok(value_str) = std::str::from_utf8(value) {
+            formatted_headers.push_str(&format!("{}: {}, ", name, value_str));
+        } else {
+            formatted_headers.push_str(&format!("{}: {:?}, ", name, value));
+        }
+    }
+    // Remove the trailing comma and space if there are headers
+    if !formatted_headers.is_empty() {
+        formatted_headers.pop();
+        formatted_headers.pop();
+    }
+    formatted_headers
 }
