@@ -20,24 +20,25 @@ Note: If you're viewing this repo on GitHub, head over to
 
 ## Structure of project:
 ```bash
-❯ tree         
-.
+src
+├── error.rs
 ├── lib.rs
 ├── main.rs
-├── request
-│  └── mod.rs
-├── response
-│  └── mod.rs
+├── request.rs
+├── response.rs
 ├── routes
 │  ├── echo.rs
 │  ├── files.rs
 │  ├── mod.rs
-│  ├── not_found.rs
 │  ├── root.rs
 │  └── user_agent.rs
 └── server.rs
+tests
+├── echo.rs
+├── files.rs
+├── root.rs
+├── support
+│  ├── mod.rs
+│  └── setup.rs
+└── user_agent.rs
 ```
-
-## TODO
-- [ ] Unit tests
-- [ ] Integration tests
