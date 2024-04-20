@@ -1,7 +1,9 @@
 use crate::{args::CliArgs, error::ServerError};
 use bytes::BytesMut;
-use std::{fmt, sync::Arc};
-use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
+use std::{collections::HashMap, fmt, sync::Arc};
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 
 pub struct RequestContext<'a> {
@@ -18,13 +20,13 @@ impl<'a> RequestContext<'a> {
 pub struct Request {
     pub method: String,
     pub path: String,
-    pub version: u8,
-    pub headers: Vec<(String, Vec<u8>)>,
+    pub version: String,
+    pub headers: HashMap<String, String>,
     pub body: Vec<u8>,
 }
 
 impl Request {
-    pub async fn parse(stream: Arc<Mutex<TcpStream>>) -> Result<Self, ServerError> {
+    pub async fn parse(stream: &Arc<Mutex<TcpStream>>) -> Result<Self, ServerError> {
         let mut buf = BytesMut::new();
         let mut stream = stream.lock().await;
 
@@ -35,7 +37,7 @@ impl Request {
                 return Err(ServerError::InternalError("Connection closed".to_string()));
             }
 
-            if let Some(request) = Self::parse_complete_request(&mut buf)? {
+            if let Some(request) = parse_complete_request(&buf)? {
                 info!(
                     "Request received: method={}, path={}",
                     request.method, request.path,
@@ -44,63 +46,93 @@ impl Request {
             }
         }
     }
-
-    fn parse_complete_request(buf: &mut BytesMut) -> Result<Option<Self>, ServerError> {
-        let mut headers = [httparse::EMPTY_HEADER; 16];
-        let mut request = httparse::Request::new(&mut headers);
-        let status = request.parse(buf);
-
-        match status {
-            Ok(httparse::Status::Complete(_amt)) => {
-                let method = request.method.unwrap().to_string();
-                let path = request.path.unwrap().to_string();
-                let version = request.version.unwrap();
-                let parsed_headers: Vec<(String, Vec<u8>)> = request
-                    .headers
-                    .iter()
-                    .map(|h| (h.name.to_string(), h.value.to_vec()))
-                    .collect();
-
-                let content_length: Option<usize> =
-                    parsed_headers.iter().find_map(|(name, value)| {
-                        if name.to_lowercase() == "content-length" {
-                            Some(std::str::from_utf8(value).ok()?.parse().ok()?)
-                        } else {
-                            None
-                        }
-                    });
-
-                let content_length = content_length.unwrap_or(0);
-                // I use the \r\n\r\n sequence to identify the end of the headers and the start of the body
-                let headers_end_index = buf
-                    .windows(4)
-                    .position(|window| window == b"\r\n\r\n")
-                    .unwrap_or(0);
-
-                if headers_end_index > 0 && buf.len() >= headers_end_index + 4 + content_length {
-                    let body_bytes = buf.split_to(headers_end_index + 4 + content_length);
-                    let body_slice = &body_bytes[headers_end_index + 4..];
-                    let body_vec = body_slice.to_vec();
-
-                    return Ok(Some(Request {
-                        method,
-                        path,
-                        version,
-                        headers: parsed_headers,
-                        body: body_vec,
-                    }));
-                }
-            }
-            Ok(httparse::Status::Partial) => {}
-            Err(_) => return Err(ServerError::ParseError("Error parsing request".into())),
-        }
-
-        Ok(None)
-    }
 }
 
 impl fmt::Debug for Request {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<HTTP Request {} {}", self.method, self.path)
     }
+}
+
+/// https://datatracker.ietf.org/doc/html/rfc2616#section-5.1
+fn parse_complete_request(buf: &BytesMut) -> Result<Option<Request>, ServerError> {
+    // Find the index of the first occurrence of double CRLF (\r\n\r\n) in the buffer
+    let end_of_headers_index = find_end_of_headers(buf)?;
+
+    if let Some(end_index) = end_of_headers_index {
+        let headers_bytes = &buf[..end_index];
+        let headers_string = String::from_utf8_lossy(headers_bytes);
+        let headers = parse_headers(&headers_string);
+
+        let body = parse_body(buf, end_index);
+
+        let request_line = extract_request_line(buf, end_index);
+        let request = request_line.map(|(method, path, version)| Request {
+            method,
+            path,
+            version,
+            headers,
+            body,
+        });
+
+        Ok(request)
+    } else {
+        Ok(None)
+    }
+}
+
+fn find_end_of_headers(buf: &BytesMut) -> Result<Option<usize>, ServerError> {
+    // Find the index of the first occurrence of double CRLF (\r\n\r\n) in the buffer
+    Ok(buf.windows(4).position(|w| w == b"\r\n\r\n"))
+}
+
+fn parse_headers(headers_string: &str) -> HashMap<String, String> {
+    let mut headers = HashMap::new();
+    for line in headers_string.lines() {
+        if let Some((lhs, rhs)) = line.split_once(": ") {
+            headers.insert(lhs.trim().to_string(), rhs.trim().to_string());
+        }
+    }
+    headers
+}
+
+fn parse_body(buf: &BytesMut, end_index: usize) -> Vec<u8> {
+    let body = if let Some(content_length_str) = buf[end_index..].split(|&b| b == b'\n').next() {
+        let content_length_str = String::from_utf8_lossy(content_length_str);
+        content_length_str
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|content_length| {
+                if buf.len() >= end_index + 4 + content_length {
+                    Some(buf[end_index + 4..end_index + 4 + content_length].to_vec())
+                } else {
+                    None
+                }
+            })
+    } else {
+        None
+    };
+
+    body.unwrap_or_default()
+}
+
+fn extract_request_line(buf: &BytesMut, end_index: usize) -> Option<(String, String, String)> {
+    buf[..end_index]
+        .split(|&b| b == b'\n')
+        .next()
+        .and_then(|request_line_bytes| {
+            let request_line = String::from_utf8_lossy(request_line_bytes)
+                .trim()
+                .to_string();
+            parse_request_line(&request_line).ok()
+        })
+}
+
+fn parse_request_line(request_line: &str) -> Result<(String, String, String), ServerError> {
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default().to_string();
+    let path = parts.next().unwrap_or_default().to_string();
+    let version = parts.next().unwrap_or_default().to_string();
+    Ok((method, path, version))
 }

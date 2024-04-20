@@ -13,6 +13,8 @@ pub use root::*;
 pub use user_agent::*;
 
 pub async fn handle_routes(context: &RequestContext<'_>) -> Result<Response, ServerError> {
+    println!("path: {}", context.request.path.to_lowercase());
+
     match (
         context.request.method.as_str(),
         context.request.path.to_lowercase().as_str(),

@@ -33,7 +33,7 @@ async fn main() {
                 let args = args.clone();
 
                 tokio::spawn(async move {
-                    if let Ok(request) = Request::parse(stream.clone()).await {
+                    if let Ok(request) = Request::parse(&stream).await {
                         let request_context = RequestContext::new(&request, &args);
                         handle_connection(stream.clone(), &request_context).await;
                     } else {
@@ -51,9 +51,7 @@ async fn main() {
 async fn handle_connection(stream: Arc<Mutex<TcpStream>>, request_context: &RequestContext<'_>) {
     match handle_routes(request_context).await {
         Ok(response) => {
-            if let Err(e) = response.write_response(stream).await {
-                error!("Failed to write to socket: {}", e);
-            }
+            let _ = response.write_response(stream).await;
         }
         Err(err) => {
             error!("Error handling request: {}", err);
@@ -61,9 +59,7 @@ async fn handle_connection(stream: Arc<Mutex<TcpStream>>, request_context: &Requ
                 ServerError::NotFound => not_found(),
                 _ => internal_server_error(),
             };
-            if let Err(e) = response.write_response(stream.clone()).await {
-                error!("Failed to write error response to socket: {}", e);
-            }
+            let _ = response.write_response(stream.clone()).await;
         }
     };
 }
