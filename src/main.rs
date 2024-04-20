@@ -1,6 +1,6 @@
 use clap::Parser;
 use http_server_starter_rust::{
-    error::{bad_gateway, forbidden, internal_server_error, not_found, unauthorized, ServerError},
+    error::{internal_server_error, not_found, ServerError},
     request::{Request, RequestContext},
     routes::handle_routes,
     CliArgs,
@@ -59,9 +59,6 @@ async fn handle_connection(stream: Arc<Mutex<TcpStream>>, request_context: &Requ
             error!("Error handling request: {}", err);
             let response = match err {
                 ServerError::NotFound => not_found(),
-                ServerError::Unauthorized => unauthorized(),
-                ServerError::Forbidden => forbidden(),
-                ServerError::BadGateway => bad_gateway(),
                 _ => internal_server_error(),
             };
             if let Err(e) = response.write_response(stream.clone()).await {

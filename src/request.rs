@@ -36,7 +36,7 @@ impl Request {
             let n = stream.read_buf(&mut buf).await?;
             if n == 0 {
                 error!("Connection closed");
-                return Err(ServerError::StreamError("Connection closed".to_string()));
+                return Err(ServerError::InternalError("Connection closed".to_string()));
             }
 
             if let Some(request) = Self::parse_complete_request(&mut buf)? {
