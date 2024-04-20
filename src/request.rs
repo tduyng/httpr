@@ -56,7 +56,6 @@ impl fmt::Debug for Request {
 
 /// https://datatracker.ietf.org/doc/html/rfc2616#section-5.1
 fn parse_complete_request(buf: &BytesMut) -> Result<Option<Request>, ServerError> {
-    // Find the index of the first occurrence of double CRLF (\r\n\r\n) in the buffer
     let end_of_headers_index = find_end_of_headers(buf)?;
 
     if let Some(end_index) = end_of_headers_index {
@@ -97,24 +96,12 @@ fn parse_headers(headers_string: &str) -> HashMap<String, String> {
 }
 
 fn parse_body(buf: &BytesMut, end_index: usize) -> Vec<u8> {
-    let body = if let Some(content_length_str) = buf[end_index..].split(|&b| b == b'\n').next() {
-        let content_length_str = String::from_utf8_lossy(content_length_str);
-        content_length_str
-            .trim()
-            .parse::<usize>()
-            .ok()
-            .and_then(|content_length| {
-                if buf.len() >= end_index + 4 + content_length {
-                    Some(buf[end_index + 4..end_index + 4 + content_length].to_vec())
-                } else {
-                    None
-                }
-            })
+    let body_start = end_index + 4;
+    if buf.len() > body_start {
+        buf[body_start..].to_vec()
     } else {
-        None
-    };
-
-    body.unwrap_or_default()
+        Vec::new()
+    }
 }
 
 fn extract_request_line(buf: &BytesMut, end_index: usize) -> Option<(String, String, String)> {
