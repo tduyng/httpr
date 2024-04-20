@@ -1,8 +1,19 @@
-use crate::{error::ServerError, CliArgs};
+use crate::{args::CliArgs, error::ServerError};
 use bytes::BytesMut;
 use std::{fmt, sync::Arc};
 use tokio::{io::AsyncReadExt, net::TcpStream, sync::Mutex};
 use tracing::{error, info};
+
+pub struct RequestContext<'a> {
+    pub request: &'a Request,
+    pub args: &'a CliArgs,
+}
+
+impl<'a> RequestContext<'a> {
+    pub fn new(request: &'a Request, args: &'a CliArgs) -> Self {
+        RequestContext { request, args }
+    }
+}
 
 pub struct Request {
     pub method: String,
@@ -12,22 +23,7 @@ pub struct Request {
     pub body: Vec<u8>,
 }
 
-impl Default for Request {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Request {
-    pub fn new() -> Self {
-        Request {
-            method: String::new(),
-            path: String::new(),
-            version: 1,
-            headers: Vec::new(),
-            body: Vec::new(),
-        }
-    }
     pub async fn parse(stream: Arc<Mutex<TcpStream>>) -> Result<Self, ServerError> {
         let mut buf = BytesMut::new();
         let mut stream = stream.lock().await;
@@ -41,11 +37,8 @@ impl Request {
 
             if let Some(request) = Self::parse_complete_request(&mut buf)? {
                 info!(
-                    "Request received: method={}, path={}, headers={:?}, body={}",
-                    request.method,
-                    request.path,
-                    format_headers(&request.headers),
-                    String::from_utf8_lossy(&request.body)
+                    "Request received: method={}, path={}",
+                    request.method, request.path,
                 );
                 return Ok(request);
             }
@@ -110,32 +103,4 @@ impl fmt::Debug for Request {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<HTTP Request {} {}", self.method, self.path)
     }
-}
-
-pub struct RequestContext<'a> {
-    pub request: &'a Request,
-    pub args: &'a CliArgs,
-}
-
-impl<'a> RequestContext<'a> {
-    pub fn new(request: &'a Request, args: &'a CliArgs) -> Self {
-        RequestContext { request, args }
-    }
-}
-
-fn format_headers(headers: &[(String, Vec<u8>)]) -> String {
-    let mut formatted_headers = String::new();
-    for (name, value) in headers {
-        if let Ok(value_str) = std::str::from_utf8(value) {
-            formatted_headers.push_str(&format!("{}: {}, ", name, value_str));
-        } else {
-            formatted_headers.push_str(&format!("{}: {:?}, ", name, value));
-        }
-    }
-    // Remove the trailing comma and space if there are headers
-    if !formatted_headers.is_empty() {
-        formatted_headers.pop();
-        formatted_headers.pop();
-    }
-    formatted_headers
 }

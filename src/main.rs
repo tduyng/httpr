@@ -1,9 +1,9 @@
 use clap::Parser;
 use http_server_starter_rust::{
+    args::CliArgs,
     error::{internal_server_error, not_found, ServerError},
     request::{Request, RequestContext},
     routes::handle_routes,
-    CliArgs,
 };
 use std::sync::Arc;
 use tokio::{
