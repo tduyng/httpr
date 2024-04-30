@@ -17,3 +17,17 @@ Socket errors: connect 0, read 16771, write 13, timeout 0
 Requests/sec: 3259.19
 Transfer/sec: 213.25KB
 ```
+
+Using tokio multithread:
+
+```md
+Running 5s test @ http://localhost:2024
+6 threads and 200 connections
+Thread Stats Avg Stdev Max +/- Stdev
+Latency 18.77ms 46.66ms 396.86ms 96.04%
+Req/Sec 1.35k 560.31 1.73k 83.61%
+16456 requests in 5.04s, 1.05MB read
+Socket errors: connect 0, read 16489, write 0, timeout 0
+Requests/sec: 3263.56
+Transfer/sec: 213.53KB
+```
