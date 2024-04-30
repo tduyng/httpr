@@ -1,10 +1,12 @@
+mod error;
 mod http_response;
 pub mod token;
-use bytes::BytesMut;
+pub use error::*;
 pub use http_response::*;
 pub use httpstatus::{StatusClass, StatusCode};
 
 use anyhow::Result;
+use bytes::BytesMut;
 use socket2::{Domain, Socket, Type};
 use std::net::SocketAddr;
 use std::time::Duration;
