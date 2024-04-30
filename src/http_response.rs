@@ -36,13 +36,17 @@ impl HttpResponse {
         self
     }
 
-    pub fn content_type(&mut self, content_type: String) -> &mut Self {
-        self.content_type = content_type;
+    pub fn content_type(&mut self, content_type: &str) -> &mut Self {
+        self.content_type = content_type.to_string();
         self
     }
 
     pub fn write(&mut self, src: &[u8]) {
         self.body.put_slice(src)
+    }
+
+    pub fn clear(&mut self) {
+        self.body.clear()
     }
 
     pub fn set_header(&mut self, key: &str, value: &str) -> Option<()> {
@@ -61,13 +65,16 @@ impl HttpResponse {
         response.put_slice(b"\r\n");
 
         // parse headers
-        let mut headers = self.headers.clone();
+        let body = self.body.clone();
+        let content_length = body.len();
+
         let content_type = if !self.content_type.is_empty() {
             self.content_type.clone()
         } else {
             "text/plain".to_string()
         };
-        let content_length = self.body.len();
+
+        let mut headers = self.headers.clone();
         headers.insert("Content-Type".to_string(), content_type);
         headers.insert("Content-Length".to_string(), content_length.to_string());
         for (key, val) in &headers {
@@ -98,6 +105,16 @@ mod tests {
         assert_eq!(
             response.build(),
             b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: text/plain\r\nx-some-test-header: some-value\r\n\r\nhi"
+        )
+    }
+
+    #[test]
+    fn empty_response() {
+        let response = HttpResponse::new();
+        println!("{}", std::str::from_utf8(&response.build()).unwrap());
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
         )
     }
 }
