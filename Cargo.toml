@@ -1,27 +1,16 @@
-# DON'T EDIT THIS!
-#
-# Codecrafters relies on this file being intact to run tests successfully. Any changes
-# here will not reflect when CodeCrafters tests your code, and might even cause build
-# failures.
-#
-# DON'T EDIT THIS!
 [package]
-name = "http-server-starter-rust"
+name = "rhhtp"
 version = "0.1.0"
 edition = "2021"
 
-# DON'T EDIT THIS!
-#
-# Codecrafters relies on this file being intact to run tests successfully. Any changes
-# here will not reflect when CodeCrafters tests your code, and might even cause build
-# failures.
-#
-# DON'T EDIT THIS!
 [dependencies]
-bytes = "1.6.0"
+anyhow = "1.0.82"
 clap = { version = "4.5.4", features = ["derive"] }
 httparse = "1.8.0"
+httpstatus = "0.1.2"
+thiserror = "1.0.59"
 tokio = { version = "1.23.0", features = ["full"] } # async networking
-tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
 
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
