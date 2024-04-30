@@ -1,6 +1,9 @@
 use anyhow::Result;
-use rhhtp::start_server;
+use rhhtp::HttpServer;
+use std::net::SocketAddr;
 
 fn main() -> Result<()> {
-    start_server()
+    let server = HttpServer::new();
+    let address: SocketAddr = "[::1]:2024".parse()?;
+    server.listen(address)
 }
