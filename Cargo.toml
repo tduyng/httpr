@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.82"
+bytes = "1.6.0"
 clap = { version = "4.5.4", features = ["derive"] }
 httparse = "1.8.0"
 httpstatus = "0.1.2"

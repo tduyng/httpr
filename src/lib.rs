@@ -32,11 +32,11 @@ fn process_request(mut socket: TcpStream, addr: SocketAddr) -> Result<()> {
     println!("received request from {}", addr);
 
     let mut buffer = [0; 30000];
-    socket.read(&mut buffer[..])?;
+    socket.read_exact(&mut buffer[..])?;
 
-    let res = HttpResponse::default();
-    std::io::stdout().write(&res.build())?;
-    socket.write(&res.build())?;
+    let mut res = HttpResponse::default();
+    res.write(b"tee");
+    socket.write_all(&res.build())?;
 
     Ok(())
 }
