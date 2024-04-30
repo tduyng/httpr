@@ -1,158 +1,53 @@
-# Build Your Own HTTP Server Challenge
-
-[![progress-banner](https://backend.codecrafters.io/progress/http-server/76effb18-7490-4be4-be46-f3e2a01cd92c)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
-
-Welcome to the "Build Your Own HTTP Server" Challenge repository for Rust solutions!
+# Build HTTP server from scratch in Rust
 
 ## Overview
 
-This repository serves as a my Rust solutions to the ["Build Your Own HTTP server" Challenge](https://app.codecrafters.io/courses/http-server/overview).
+HTTP is the backbone of the web, facilitating communication between clients and servers. Building an HTTP server from scratch in Rust is not only a fantastic learning experience but also an opportunity to delve deep into the intricacies of web protocols and server-side programming.
 
-HTTP is the backbone of the web, enabling communication between clients and servers.
-In this challenge, you'll embark on an exciting journey to build your very own HTTP/1.1 server in Rust.
-By completing this challenge, you'll gain valuable insights into TCP servers, HTTP request syntax, and more.
+This project aims to guide you through the process of creating a simple yet robust HTTP server in Rust, empowering you to understand the inner workings of web servers and gain hands-on experience with Rust's powerful features.
 
->Each first commit that I put here corresponds to each step of the challenge. However, afterwards, I tried to approach the challenge in different ways.
+## Getting Started
 
-With each step, you'll gradually enhance your server's capabilities and gain a deeper understanding of how web servers operate under the hood.
+### Prerequisites
 
-Here is different stages of this challenge.
+Before getting started, ensure that you have [Rust](https://www.rust-lang.org/) and [Cargo](https://doc.rust-lang.org/stable/cargo/) installed on your system.
 
-## Stages of challenges
+### Running the Project
 
-<details>
-<summary>1. Response with 200</summary>
-In this stage, you'll respond to a HTTP request with a 200 OK response.
+1. Clone this repository to your local machine:
 
-Your program will need to:
-
-Accept a TCP connection
-Read data from the connection (we'll get to parsing it in later stages)
-Respond with `HTTP/1.1 200 OK\r\n\r\n` (there are two `\r\ns` at the end)
-`HTTP/1.1 200 OK` is the HTTP Status Line.
-`\r\n`, also known as CRLF, is the end-of-line marker that HTTP uses.
-The first `\r\n` signifies the end of the status line.
-The second `\r\n` signifies the end of the response headers section (which is empty in this case).
-It's okay to ignore the data received from the connection for now. We'll get to parsing it in later stages.
-
-For more details on the structure of a HTTP response, view the MDN docs.
-</details>
-
-
-<details>
-<summary>2. Respond with 404</summary>
-In this stage, your program will need to extract the path from the HTTP request.
-
-Here's what the contents of a HTTP request look like:
-```
-GET /index.html HTTP/1.1
-Host: localhost:4221
-User-Agent: curl/7.64.1
-```
-GET `/index.html` HTTP/1.1 is the start line.
-`GET` is the HTTP method.
-`/index.html` is the path.
-`HTTP/1.1` is the HTTP version.
-`Host: localhost:4221` and `User-Agent: curl/7.64.1` are HTTP headers.
-Note that all of these lines are separated by `\r\n`, not just `\n`.
-In this stage, we'll only focus on extracting the path from the request.
-
-If the path is /, you'll need to respond with a 200 OK response. Otherwise, you'll need to respond with a 404 Not Found response.
-</details>
-
-
-<details>
-<summary>3. Respond with content</summary>
-In this stage, your program will need to respond with a body. In the previous stages we were only sending a status code, no body.
-
-The task here is to parse the path from the HTTP request. We will send a random string in the url path you will need to parse that string and then respond with the parsed string (only) in the response body.
-
-The tester will send you a request of the form `GET /echo/<a-random-string>`.
-
-Your program will need to respond with a 200 OK response. The response should have a content type of text/plain, and it should contain the random string as the body.
-
-As an example, here's a request you might receive:
-```
-GET /echo/abc HTTP/1.1
-Host: localhost:4221
-User-Agent: curl/7.64.1
-```
-And here's the response you're expected to send back:
-```
-HTTP/1.1 200 OK
-Content-Type: text/plain
-Content-Length: 3
+```bash
+git clone https://github.com/tduyng/rhttp.git && cd rhttp
 ```
 
-abc
-Remember, lines in the response are separated by `\r\n`, not just `\n`.
+2. Run server
 
-For more details on the structure of a HTTP response, view the MDN docs.
-</details>
-
-<details>
-<summary>4. Parse headers</summary>
-In this stage, your program will need to parse HTTP request headers.
-
-The tester will send you a request of the form `GET /user-agent`, and it'll include a User-Agent header.
-
-Your program will need to respond with a 200 OK response. The response should have a content type of text/plain, and it should contain the user agent value as the body.
-
-For example, here's a request you might receive:
+```bash
+cargo run --bin server
 ```
-GET /user-agent HTTP/1.1
-Host: localhost:4221
-User-Agent: curl/7.64.1
+
+## Testing benchmarks
+
+To evaluate the performance of your HTTP server, you can use the `wrk` tool, which is a modern HTTP benchmarking tool capable of generating significant load.
+
+Install `wrk` using your system's package manager or by following the instructions on the official GitHub repository: `wrk`.
+
+Example command to test your server with wrk:
+
+```bash
+wrk -t6 -c200 -d5s http://localhost:2024
 ```
-and here's the response you're expected to send back:
 
-```
-HTTP/1.1 200 OK
-Content-Type: text/plain
-Content-Length: 11
+Adjust the parameters (-t, -c, -d) according to your testing requirements.
 
-curl/7.64.1
-```
-</details>
+## Features
 
-<details>
-<summary>5. Concurrent connections</summary>
-Up until now, we've only tested your program against a single connection in each stage.
+- Simple implementation: The HTTP server is implemented from scratch, providing a clear understanding of its internal workings.
+- Concurrency: Use tokio async to handle multiple client connections efficiently.
+- Extensibility: Designed to be easily extensible, allowing you to add custom features and middleware.
 
-In this stage, your server will need to handle multiple concurrent connections.
+## License
 
-The tester will send you multiple requests at the same time. Your server will need to respond to all of them.
-</details>
+This project is licensed under the terms of the MIT license. See the [LICENSE](./LICENCE) file for details.
 
-
-<details>
-<summary>6. Get a file</summary>
-In this stage, your server will need to return the contents of a file.
-
-The tester will execute your program with a `--directory` flag like this:
-```
-./your_server.sh --directory <directory>
-```
-It'll then send you a request of the form `GET /files/<filename>`.
-
-If <filename> exists in <directory>, you'll need to respond with a 200 OK response. The response should have a content type of `application/octet-stream`, and it should contain the contents of the file as the body.
-
-If the file doesn't exist, return a 404.
-
-We pass in absolute path to your program using the `--directory` flag.
-</details>
-
-<details>
-<summary>7. Post a file</summary>
-In this stage, your server will need to accept the contents of a file in a POST request and save it to a directory.
-
-Just like in the previous stage, the tester will execute your program with a `--directory` flag like this:
-```
-./your_server.sh --directory <directory>
-```
-It'll then send you a request of the form `POST /files/<filename>`. The request body will contain the contents of the file.
-
-You'll need to fetch the contents of the file from the request body and save it to `<directory>/<filename>`. The response code returned should be 201.
-
-We pass in absolute path to your program using the `--directory` flag.
-</details>
+Feel free to customize and expand upon this README to suit your project's specific features, goals, and audience. Good luck with your HTTP server project! 🚀
