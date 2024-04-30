@@ -3,17 +3,17 @@
 Command:
 
 ```bash
-wrk -t6 -c200 -d10s http://localhost:2024
+wrk -t6 -c200 -d5s http://localhost:2024
 ```
 
 ```md
-Running 10s test @ http://localhost:2024
+Running 5s test @ http://localhost:2024
 6 threads and 200 connections
 Thread Stats Avg Stdev Max +/- Stdev
-Latency 27.86ms 40.65ms 281.40ms 93.06%
-Req/Sec 1.04k 398.73 1.47k 81.17%
-16225 requests in 2.83s, 1.04MB read
-Socket errors: connect 0, read 16688, write 3, timeout 0
-Requests/sec: 5732.98
-Transfer/sec: 375.11KB
+Latency 24.65ms 27.38ms 257.99ms 96.97%
+Req/Sec 0.92k 301.15 1.37k 84.48%
+16345 requests in 5.02s, 1.04MB read
+Socket errors: connect 0, read 16771, write 13, timeout 0
+Requests/sec: 3259.19
+Transfer/sec: 213.25KB
 ```
