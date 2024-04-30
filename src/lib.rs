@@ -4,6 +4,10 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
+mod http_response;
+pub use http_response::*;
+pub use httpstatus::{StatusClass, StatusCode};
+
 pub fn start_server() -> Result<()> {
     let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
     let address: SocketAddr = "[::1]:2024".parse()?;
@@ -24,19 +28,15 @@ pub fn start_server() -> Result<()> {
     }
 }
 
-const HELLO_RESPONSE: &[u8] =
-    b"HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 12\n\nHello world!";
-
 fn process_request(mut socket: TcpStream, addr: SocketAddr) -> Result<()> {
     println!("received request from {}", addr);
 
     let mut buffer = [0; 30000];
     socket.read(&mut buffer[..])?;
 
-    let res = std::str::from_utf8(&buffer[..])?;
-    println!("Got Request:\n\n{}", res);
-
-    socket.write(HELLO_RESPONSE)?;
+    let res = HttpResponse::default();
+    std::io::stdout().write(&res.build())?;
+    socket.write(&res.build())?;
 
     Ok(())
 }
