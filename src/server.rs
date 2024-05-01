@@ -12,11 +12,11 @@ use tokio::{
 use crate::{HttpResponse, Request};
 
 #[derive(Default, Debug)]
-pub struct HttpServer {}
+pub struct Server {}
 
-impl HttpServer {
+impl Server {
     pub fn new() -> Self {
-        HttpServer {}
+        Server {}
     }
 
     pub fn listen_blocking(&mut self, address: SocketAddr) -> Result<()> {
@@ -39,7 +39,7 @@ impl HttpServer {
             match listener.accept().await {
                 Ok((socket, _addr)) => {
                     tokio::spawn(async move {
-                        HttpServer::process_request(socket).await.unwrap_or_else(|e| {
+                        Server::process_request(socket).await.unwrap_or_else(|e| {
                             println!("{}", e);
                         })
                     });
@@ -56,7 +56,7 @@ impl HttpServer {
         let mut request = Request::new();
         request.parse(Bytes::from(bytes))?;
 
-        HttpServer::debug_request(request, request_length);
+        Server::debug_request(request, request_length);
 
         let mut response = HttpResponse::default();
         response.set_header("x-powered-by", "rhttp");
