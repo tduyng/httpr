@@ -1,10 +1,10 @@
 mod error;
-mod http_request;
+mod request;
 mod response;
 mod server;
 pub mod tokens;
 pub use error::*;
-pub use http_request::*;
 pub use httpstatus::{StatusClass, StatusCode};
+pub use request::*;
 pub use response::*;
 pub use server::*;
