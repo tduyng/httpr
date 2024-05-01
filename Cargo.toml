@@ -15,3 +15,6 @@ tokio = { version = "1.23", features = ["rt-multi-thread", "net", "io-util"] }
 [[bin]]
 name = "server"
 path = "src/bin/server.rs"
+
+[dev-dependencies]
+rstest = "0.19"
