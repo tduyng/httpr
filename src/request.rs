@@ -32,7 +32,7 @@ impl RequestHeaders {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Method {
-    OPTION,
+    OPTIONS,
     GET,
     HEAD,
     POST,
@@ -45,7 +45,7 @@ pub enum Method {
 impl fmt::Display for Method {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let method_str = match self {
-            Method::OPTION => "OPTIONS",
+            Method::OPTIONS => "OPTIONS",
             Method::GET => "GET",
             Method::HEAD => "HEAD",
             Method::POST => "POST",
@@ -62,7 +62,7 @@ impl TryFrom<&str> for Method {
     type Error = &'static str;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.to_ascii_uppercase().as_str() {
-            "OPTION" => Ok(Method::OPTION),
+            "OPTION" => Ok(Method::OPTIONS),
             "GET" => Ok(Method::GET),
             "HEAD" => Ok(Method::HEAD),
             "POST" => Ok(Method::POST),

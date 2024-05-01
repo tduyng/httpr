@@ -8,7 +8,7 @@ anyhow = "1"
 bytes = "1.6"
 httpstatus = "0.1"
 thiserror = "1"
-tokio = { version = "1.23", features = ["rt-multi-thread", "net", "io-util"] }
+tokio = { version = "1.23", features = ["full"] }
 
 [[bin]]
 name = "server"
@@ -17,4 +17,3 @@ path = "src/bin/server.rs"
 [dev-dependencies]
 reqwest = "0.12.4"
 rstest = "0.19"
-tokio = { version = "1.23", features = ["test-util", "full"] }

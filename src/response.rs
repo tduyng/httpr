@@ -2,6 +2,7 @@ use bytes::{BufMut, BytesMut};
 use httpstatus::StatusCode;
 use std::collections::BTreeMap;
 
+#[derive(Debug)]
 pub struct Response {
     status_code: StatusCode,
     content_type: String,
