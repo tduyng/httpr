@@ -8,7 +8,7 @@ pub use http_response::*;
 pub use httpstatus::{StatusClass, StatusCode};
 
 use anyhow::Result;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use socket2::{Domain, Socket, Type};
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -69,11 +69,31 @@ impl HttpServer {
     async fn process_request(mut socket: TcpStream, addr: SocketAddr) -> Result<()> {
         println!("received request from {}", addr);
         let mut bytes = BytesMut::new();
-        socket.read_buf(&mut bytes).await?;
+        let request_length = socket.read_buf(&mut bytes).await?;
+        println!("got request:\n  length: {}", request_length);
 
-        let mut res = HttpResponse::default();
-        res.write(b"tee");
-        socket.write_all(&res.build()).await?;
+        let mut request = http_request::Request::new();
+        request.parse(Bytes::from(bytes))?;
+
+        println!(
+            "  method: {}\n  path: {}\n  version: HTTP/{}",
+            request.method.unwrap(),
+            request.path.unwrap(),
+            request.version.unwrap()
+        );
+        println!("  headers:");
+        for (header, value) in request.headers.iter() {
+            println!(
+                "    \"{}\":\"{}\"",
+                header,
+                String::from_utf8(value.to_vec()).expect("header to be string")
+            );
+        }
+
+        let mut response = HttpResponse::default();
+        response.set_header("x-powered-by", "rhttp");
+        response.write(b"hello world");
+        socket.write_all(&response.build()).await?;
 
         Ok(())
     }
@@ -100,7 +120,7 @@ mod tests {
 
         let response = reqwest::get("http://localhost:20241").await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.text().await.unwrap(), "tee");
+        assert_eq!(response.text().await.unwrap(), "hello world");
 
         // Stop the server
         server_task.abort();
@@ -115,6 +135,6 @@ mod tests {
 
         let response = reqwest::get("http://localhost:20242").await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.text().await.unwrap(), "tee");
+        assert_eq!(response.text().await.unwrap(), "hello world");
     }
 }
