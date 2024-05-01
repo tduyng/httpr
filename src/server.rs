@@ -22,59 +22,50 @@ impl Server {
         rt.block_on(self.listen(address))
     }
 
-    async fn listen(&mut self, address: SocketAddr) -> Result<()> {
+    pub async fn listen(&mut self, address: SocketAddr) -> Result<()> {
         let listener = TcpListener::bind(address).await?;
-        println!("started server on {}", address);
+        println!("Server started on {}", address);
 
-        while let Ok((stream, _adrr)) = listener.accept().await {
+        loop {
+            let (stream, _addr) = listener.accept().await?;
             tokio::spawn(async move {
-                if let Err(e) = Server::process_request(stream).await {
-                    eprintln!("error processing request: {}", e);
+                if let Err(e) = Server::handle_connection(stream).await {
+                    eprintln!("Error processing request: {}", e);
                 }
             });
         }
-        Ok(())
     }
 
-    async fn process_request(mut socket: TcpStream) -> Result<()> {
+    async fn handle_connection(mut socket: TcpStream) -> Result<()> {
         let mut bytes = BytesMut::new();
-        let request_length = socket.read_buf(&mut bytes).await?;
+        socket.read_buf(&mut bytes).await?;
 
         let mut request = Request::new();
         request.parse(Bytes::from(bytes))?;
 
-        Server::debug_request(request, request_length);
+        Server::debug_request(request);
 
         let mut response = Response::default();
         response.set_header("x-powered-by", "rhttp");
         response.write(b"hello world");
-        socket.write_all(&response.build()).await?;
 
+        socket.write_all(&response.build()).await?;
         Ok(())
     }
 
-    fn debug_request(request: Request, request_length: usize) {
-        println!("got request:\n  length: {}", request_length);
-
-        println!(
-            "  method: {:?}\n  path: {}\n  version: HTTP/{}",
-            request.method.unwrap(),
-            request.path.unwrap(),
-            request.version.unwrap()
-        );
-        println!("  headers:");
+    fn debug_request(request: Request) {
+        println!("Got request:");
+        println!("  Method: {:?}", request.method);
+        println!("  Path: {}", request.path.unwrap_or_default());
+        println!("  Version: HTTP/{}", request.version.unwrap_or(0));
+        println!("  Headers:");
         for (header, value) in request.headers.iter() {
-            println!(
-                "    \"{}\":\"{}\"",
-                header,
-                String::from_utf8(value.to_vec()).expect("header to be string")
-            );
+            println!("    \"{}\": \"{}\"", header, std::str::from_utf8(value).unwrap_or(""));
         }
-
         if !request.body.is_empty() {
             println!(
-                "  body: {}",
-                String::from_utf8(request.body).unwrap_or("(not valid utf8)".to_string())
+                "  Body: {}",
+                std::str::from_utf8(&request.body).unwrap_or("(not valid utf-8)")
             );
         }
     }
