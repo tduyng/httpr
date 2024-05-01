@@ -202,4 +202,75 @@ mod tests {
             .parse(Bytes::from_static(b"GET /test HTTP/1.1\r"))
             .expect_err("parsing request");
     }
+
+    #[test]
+    fn parse_request_with_headers() {
+        let mut request = Request::new();
+
+        request
+            .parse(Bytes::from_static(
+                b"GET /test HTTP/1.1\r\nContent-Type: application/json\r\nAuthorization: Bearer token\r\n\r\n",
+            ))
+            .expect("parsing request");
+
+        assert_eq!(request.version, Some(1));
+        assert_eq!(request.method, Some(String::from("GET")));
+        assert_eq!(request.path, Some(String::from("/test")));
+        assert_eq!(request.headers.iter().count(), 2);
+        assert_eq!(
+            request.headers.iter().find(|(k, _)| k.as_str() == "Content-Type"),
+            Some((&String::from("Content-Type"), &b"application/json"[..].to_vec()))
+        );
+        assert_eq!(
+            request.headers.iter().find(|(k, _)| k.as_str() == "Authorization"),
+            Some((&String::from("Authorization"), &b"Bearer token"[..].to_vec()))
+        );
+    }
+
+    #[test]
+    fn parse_request_with_body() {
+        let mut request = Request::new();
+
+        request
+            .parse(Bytes::from_static(
+                b"POST /test HTTP/1.1\r\nContent-Length: 11\r\n\r\nHello World",
+            ))
+            .expect("parsing request");
+
+        assert_eq!(request.version, Some(1));
+        assert_eq!(request.method, Some(String::from("POST")));
+        assert_eq!(request.path, Some(String::from("/test")));
+        assert_eq!(request.headers.iter().count(), 1);
+        assert_eq!(
+            request.headers.iter().find(|(k, _)| k.as_str() == "Content-Length"),
+            Some((&String::from("Content-Length"), &b"11"[..].to_vec()))
+        );
+    }
+
+    #[test]
+    fn parse_request_with_invalid_method() {
+        let mut request = Request::new();
+
+        _ = request
+            .parse(Bytes::from_static(b"INVALID /test HTTP/1.1\r\n\r\n"))
+            .is_err();
+    }
+
+    #[test]
+    fn parse_request_with_invalid_uri() {
+        let mut request = Request::new();
+
+        _ = request
+            .parse(Bytes::from_static(b"GET /test!@# HTTP/1.1\r\n\r\n"))
+            .is_err();
+    }
+
+    #[test]
+    fn parse_request_with_invalid_version() {
+        let mut request = Request::new();
+
+        _ = request
+            .parse(Bytes::from_static(b"GET /test HTTP/1.0\r\n\r\n"))
+            .is_err();
+    }
 }
