@@ -78,3 +78,43 @@ impl HttpServer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::StatusCode;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    #[tokio::test]
+    async fn test_server_listen_and_respond() {
+        let server_task = tokio::spawn(async {
+            let mut server = HttpServer::new();
+            server
+                .listen(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20241))
+                .await
+                .unwrap();
+        });
+
+        // Wait for the server to start listening
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let response = reqwest::get("http://localhost:20241").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "tee");
+
+        // Stop the server
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn test_server_listen_blocking_and_respond() {
+        let mut server = HttpServer::new();
+        server
+            .listen_blocking(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20242))
+            .unwrap();
+
+        let response = reqwest::get("http://localhost:20242").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "tee");
+    }
+}
