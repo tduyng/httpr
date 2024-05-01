@@ -1,30 +1,34 @@
 use bytes::{Buf, Bytes};
-use std::collections::BTreeMap;
+use std::collections::{btree_map, BTreeMap};
 
 use crate::{tokens, RequestError};
 
 #[derive(Debug, Default)]
-pub struct RequestHeaders<'a> {
-    pub headers: BTreeMap<&'a str, &'a [u8]>,
+pub struct RequestHeaders {
+    headers: BTreeMap<String, Vec<u8>>,
 }
 
-impl<'a> RequestHeaders<'a> {
+impl RequestHeaders {
     pub fn new() -> Self {
         RequestHeaders {
             headers: BTreeMap::new(),
         }
     }
+
+    pub fn iter(&self) -> btree_map::Iter<String, Vec<u8>> {
+        self.headers.iter()
+    }
 }
 
 #[derive(Debug, Default)]
-pub struct Request<'a> {
+pub struct Request {
     pub method: Option<String>,
     pub path: Option<String>,
     pub version: Option<u8>,
-    pub headers: RequestHeaders<'a>,
+    pub headers: RequestHeaders,
 }
 
-impl<'a> Request<'a> {
+impl Request {
     pub fn new() -> Self {
         Request {
             method: None,
@@ -40,15 +44,26 @@ impl<'a> Request<'a> {
         self.path = Some(Request::parse_uri(&mut bytes)?);
         self.version = Some(Request::parse_version(&mut bytes)?);
         Request::parse_new_line(&mut bytes)?;
-
-        // lifetime may not live long enough
-        // argument requires that `'1` must outlive `'a`
-        // Request::parse_headers(&mut bytes, &mut self.headers)?;
+        Request::parse_headers(&mut bytes, &mut self.headers)?;
 
         Ok(())
     }
 
-    pub fn parse_headers(_bytes: &mut Bytes, _headers: &'a mut RequestHeaders<'a>) -> Result<(), RequestError> {
+    pub fn parse_headers(bytes: &mut Bytes, headers: &mut RequestHeaders) -> Result<(), RequestError> {
+        let mut parse_header = || -> Result<(), RequestError> {
+            let header_name = Request::parse_header_name(bytes)?;
+            Request::parse_space(bytes)?;
+            let header_value = Request::parse_header_value(bytes)?;
+            headers.headers.insert(header_name, header_value);
+            Ok(())
+        };
+
+        loop {
+            if parse_header().is_err() {
+                break;
+            }
+        }
+
         Ok(())
     }
 
@@ -102,6 +117,44 @@ impl<'a> Request<'a> {
                 return Ok(std::str::from_utf8(token).map_err(|_| RequestError::Token)?.to_string());
             } else if !tokens::is_token(*b) {
                 println!("{}", b);
+                break;
+            }
+        }
+        Err(RequestError::Token)
+    }
+
+    fn parse_space(bytes: &mut Bytes) -> Result<(), RequestError> {
+        if !bytes.has_remaining() {
+            return Err(RequestError::NewLine);
+        }
+        if bytes.get_u8() == b' ' && bytes.has_remaining() {
+            Ok(())
+        } else {
+            Err(RequestError::Space)
+        }
+    }
+
+    fn parse_header_name(bytes: &mut Bytes) -> Result<String, RequestError> {
+        for (i, b) in bytes.iter().enumerate() {
+            if b == &b':' {
+                let token = &bytes.slice(0..i)[..];
+                bytes.advance(i + 1);
+                return Ok(std::str::from_utf8(token).map_err(|_| RequestError::Token)?.to_string());
+            } else if !tokens::is_header_name_token(*b) {
+                break;
+            }
+        }
+        Err(RequestError::Token)
+    }
+
+    fn parse_header_value(bytes: &mut Bytes) -> Result<Vec<u8>, RequestError> {
+        for (i, b) in bytes.iter().enumerate() {
+            if b == &b'\r' || b == &b'\n' {
+                let token = &bytes.slice(0..i)[..];
+                bytes.advance(i);
+                Request::parse_new_line(bytes)?;
+                return Ok(token.to_vec());
+            } else if !tokens::is_header_value_token(*b) {
                 break;
             }
         }
