@@ -1,8 +1,6 @@
 use anyhow::Result;
 use bytes::{Bytes, BytesMut};
-use socket2::{Domain, Socket, Type};
 use std::net::SocketAddr;
-use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -25,28 +23,17 @@ impl Server {
     }
 
     async fn listen(&mut self, address: SocketAddr) -> Result<()> {
-        let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
-
-        socket.set_only_v6(false)?;
-        socket.set_linger(Some(Duration::new(0, 0)))?;
-        socket.set_nonblocking(true)?;
-        socket.bind(&address.into())?;
-        socket.listen(128)?;
-        let listener = TcpListener::from_std(socket.into())?;
-
+        let listener = TcpListener::bind(address).await?;
         println!("started server on {}", address);
-        loop {
-            match listener.accept().await {
-                Ok((socket, _addr)) => {
-                    tokio::spawn(async move {
-                        Server::process_request(socket).await.unwrap_or_else(|e| {
-                            println!("{}", e);
-                        })
-                    });
+
+        while let Ok((stream, _adrr)) = listener.accept().await {
+            tokio::spawn(async move {
+                if let Err(e) = Server::process_request(stream).await {
+                    eprintln!("error processing request: {}", e);
                 }
-                Err(e) => println!("couldn't get client: {:?}", e),
-            }
+            });
         }
+        Ok(())
     }
 
     async fn process_request(mut socket: TcpStream) -> Result<()> {
