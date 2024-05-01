@@ -229,11 +229,11 @@ impl Request {
             let content_length = std::str::from_utf8(content_length).map_err(|_| RequestError::HeaderContentLength)?;
             let content_length: usize = content_length.parse().map_err(|_| RequestError::HeaderContentLength)?;
 
+            Request::parse_new_line(bytes)?;
             if bytes.remaining() < content_length {
                 return Err(RequestError::IncompleteBody);
             }
 
-            Request::parse_new_line(bytes)?;
             let body = bytes[..content_length].to_vec();
             bytes.advance(content_length);
             return Ok(body);
