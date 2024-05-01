@@ -2,14 +2,14 @@ use bytes::{BufMut, BytesMut};
 use httpstatus::StatusCode;
 use std::collections::BTreeMap;
 
-pub struct HttpResponse {
+pub struct Response {
     status_code: StatusCode,
     content_type: String,
     headers: BTreeMap<String, String>,
     body: BytesMut,
 }
 
-impl Default for HttpResponse {
+impl Default for Response {
     fn default() -> Self {
         Self {
             status_code: StatusCode::Ok,
@@ -20,15 +20,15 @@ impl Default for HttpResponse {
     }
 }
 
-impl From<HttpResponse> for Vec<u8> {
-    fn from(builder: HttpResponse) -> Self {
+impl From<Response> for Vec<u8> {
+    fn from(builder: Response) -> Self {
         builder.build()
     }
 }
 
-impl HttpResponse {
+impl Response {
     pub fn new() -> Self {
-        HttpResponse { ..Default::default() }
+        Response { ..Default::default() }
     }
 
     pub fn status_code(&mut self, status: StatusCode) -> &mut Self {
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn build_basic_response() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.write(b"hi");
         response.set_header("x-some-test-header", "some-value");
         assert_eq!(
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn empty_response() {
-        let response = HttpResponse::new();
+        let response = Response::new();
         println!("{}", std::str::from_utf8(&response.build()).unwrap());
         assert_eq!(
             response.build(),
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn response_with_different_status_code() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.status_code(StatusCode::NotFound);
         assert_eq!(
             response.build(),
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn response_with_different_content_type() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.content_type("application/json");
         assert_eq!(
             response.build(),
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn response_with_custom_headers() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.set_header("x-custom-header", "custom-value");
         assert_eq!(
                response.build(),
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn response_with_body_content() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.write(b"hello");
         assert_eq!(
             response.build(),
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn modify_response_body() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.write(b"hello");
         response.write(b" world");
         assert_eq!(
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn clear_response_body() {
-        let mut response = HttpResponse::new();
+        let mut response = Response::new();
         response.write(b"hello");
         response.clear();
         assert_eq!(

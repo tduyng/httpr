@@ -9,7 +9,7 @@ use tokio::{
     runtime,
 };
 
-use crate::{HttpResponse, Request};
+use crate::{Request, Response};
 
 #[derive(Default, Debug)]
 pub struct Server {}
@@ -58,7 +58,7 @@ impl Server {
 
         Server::debug_request(request, request_length);
 
-        let mut response = HttpResponse::default();
+        let mut response = Response::default();
         response.set_header("x-powered-by", "rhttp");
         response.write(b"hello world");
         socket.write_all(&response.build()).await?;
