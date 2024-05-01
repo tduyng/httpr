@@ -26,6 +26,7 @@ pub struct Request {
     pub path: Option<String>,
     pub version: Option<u8>,
     pub headers: RequestHeaders,
+    pub body: Vec<u8>,
 }
 
 impl Request {
@@ -35,6 +36,7 @@ impl Request {
             path: None,
             version: None,
             headers: RequestHeaders::new(),
+            body: vec![],
         }
     }
 
@@ -45,6 +47,7 @@ impl Request {
         self.version = Some(Request::parse_version(&mut bytes)?);
         Request::parse_new_line(&mut bytes)?;
         Request::parse_headers(&mut bytes, &mut self.headers)?;
+        Request::parse_body(&mut bytes, &self.headers)?;
 
         Ok(())
     }
@@ -160,6 +163,24 @@ impl Request {
         }
         Err(RequestError::Token)
     }
+
+    fn parse_body(bytes: &mut Bytes, headers: &RequestHeaders) -> Result<Vec<u8>, RequestError> {
+        if let Some(content_length) = headers.headers.get("Content-Length") {
+            let content_length = std::str::from_utf8(content_length).map_err(|_| RequestError::HeaderContentLength)?;
+            let content_length: usize = content_length.parse().map_err(|_| RequestError::HeaderContentLength)?;
+
+            if bytes.remaining() < content_length {
+                return Err(RequestError::IncompleteBody);
+            }
+
+            Request::parse_new_line(bytes)?;
+            let body = bytes[..content_length].to_vec();
+            bytes.advance(content_length);
+            return Ok(body);
+        }
+
+        Ok(vec![])
+    }
 }
 
 #[cfg(test)]
@@ -186,7 +207,7 @@ mod tests {
         let mut request = Request::new();
 
         request
-            .parse(Bytes::from_static(b"GET /test HTTP/1.1\n"))
+            .parse(Bytes::from_static(b"GET /test HTTP/1.1\r\n\r\n"))
             .expect("parsing request");
 
         assert_eq!(request.version, Some(1));

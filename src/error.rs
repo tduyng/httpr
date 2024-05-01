@@ -8,6 +8,10 @@ pub enum RequestError {
     HeaderName,
     #[error("invalid header value")]
     HeaderValue,
+    #[error("invalid header body length")]
+    HeaderContentLength,
+    #[error("incomplete body")]
+    IncompleteBody,
     #[error("invalid status")]
     Status,
     #[error("invalid version")]
