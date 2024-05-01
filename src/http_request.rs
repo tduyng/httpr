@@ -1,7 +1,8 @@
 use bytes::{Buf, Bytes};
+use core::fmt;
 use std::collections::{btree_map, BTreeMap};
 
-use crate::{tokens, RequestError};
+use crate::{tokens, HeaderError, RequestError};
 
 #[derive(Debug, Default)]
 pub struct RequestHeaders {
@@ -18,11 +19,65 @@ impl RequestHeaders {
     pub fn iter(&self) -> btree_map::Iter<String, Vec<u8>> {
         self.headers.iter()
     }
+
+    pub fn get_str(&self, key: &str) -> Result<String, HeaderError> {
+        let header = self.get(key)?;
+        String::from_utf8(header.to_vec()).map_err(|_| HeaderError::InvalidString)
+    }
+
+    pub fn get(&self, key: &str) -> Result<&Vec<u8>, HeaderError> {
+        self.headers.get(key).ok_or(HeaderError::NotFound)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Method {
+    OPTION,
+    GET,
+    HEAD,
+    POST,
+    PUT,
+    DELETE,
+    TRACE,
+    CONNECT,
+}
+
+impl fmt::Display for Method {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let method_str = match self {
+            Method::OPTION => "OPTIONS",
+            Method::GET => "GET",
+            Method::HEAD => "HEAD",
+            Method::POST => "POST",
+            Method::PUT => "PUT",
+            Method::DELETE => "DELETE",
+            Method::TRACE => "TRACE",
+            Method::CONNECT => "CONNECT",
+        };
+        write!(f, "{}", method_str)
+    }
+}
+
+impl TryFrom<&str> for Method {
+    type Error = &'static str;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.to_ascii_uppercase().as_str() {
+            "OPTION" => Ok(Method::OPTION),
+            "GET" => Ok(Method::GET),
+            "HEAD" => Ok(Method::HEAD),
+            "POST" => Ok(Method::POST),
+            "PUT" => Ok(Method::PUT),
+            "DELETE" => Ok(Method::DELETE),
+            "TRACE" => Ok(Method::TRACE),
+            "CONNECT" => Ok(Method::CONNECT),
+            _ => Err("invalid method"),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct Request {
-    pub method: Option<String>,
+    pub method: Option<Method>,
     pub path: Option<String>,
     pub version: Option<u8>,
     pub headers: RequestHeaders,
@@ -42,7 +97,12 @@ impl Request {
 
     pub fn parse(&mut self, buf: Bytes) -> Result<(), RequestError> {
         let mut bytes = buf;
-        self.method = Some(Request::parse_token(&mut bytes)?);
+        self.method = Some(
+            Request::parse_token(&mut bytes)?
+                .as_str()
+                .try_into()
+                .map_err(|_| RequestError::Method)?,
+        );
         self.path = Some(Request::parse_uri(&mut bytes)?);
         self.version = Some(Request::parse_version(&mut bytes)?);
         Request::parse_new_line(&mut bytes)?;
@@ -198,7 +258,7 @@ mod tests {
             .expect("parsing request");
 
         assert_eq!(request.version, Some(1));
-        assert_eq!(request.method, Some(String::from("GET")));
+        assert_eq!(request.method, Some(Method::GET));
         assert_eq!(request.path, Some(String::from("/test")));
     }
 
@@ -211,7 +271,7 @@ mod tests {
             .expect("parsing request");
 
         assert_eq!(request.version, Some(1));
-        assert_eq!(request.method, Some(String::from("GET")));
+        assert_eq!(request.method, Some(Method::GET));
         assert_eq!(request.path, Some(String::from("/test")));
     }
 
@@ -235,7 +295,7 @@ mod tests {
             .expect("parsing request");
 
         assert_eq!(request.version, Some(1));
-        assert_eq!(request.method, Some(String::from("GET")));
+        assert_eq!(request.method, Some(Method::GET));
         assert_eq!(request.path, Some(String::from("/test")));
         assert_eq!(request.headers.iter().count(), 2);
         assert_eq!(
@@ -259,7 +319,7 @@ mod tests {
             .expect("parsing request");
 
         assert_eq!(request.version, Some(1));
-        assert_eq!(request.method, Some(String::from("POST")));
+        assert_eq!(request.method, Some(Method::POST));
         assert_eq!(request.path, Some(String::from("/test")));
         assert_eq!(request.headers.iter().count(), 1);
         assert_eq!(

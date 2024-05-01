@@ -31,7 +31,7 @@ impl HttpServer {
         rt.block_on(self.listen(address))
     }
 
-    pub async fn listen(&mut self, address: SocketAddr) -> Result<()> {
+    async fn listen(&mut self, address: SocketAddr) -> Result<()> {
         let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
 
         // Enable processing of both ipv6 and ipv4 packets
@@ -54,9 +54,9 @@ impl HttpServer {
         println!("started server on {}", address);
         loop {
             match listener.accept().await {
-                Ok((socket, addr)) => {
+                Ok((socket, _addr)) => {
                     tokio::spawn(async move {
-                        HttpServer::process_request(socket, addr).await.unwrap_or_else(|e| {
+                        HttpServer::process_request(socket).await.unwrap_or_else(|e| {
                             println!("{}", e);
                         })
                     });
@@ -66,8 +66,7 @@ impl HttpServer {
         }
     }
 
-    async fn process_request(mut socket: TcpStream, addr: SocketAddr) -> Result<()> {
-        println!("received request from {}", addr);
+    async fn process_request(mut socket: TcpStream) -> Result<()> {
         let mut bytes = BytesMut::new();
         let request_length = socket.read_buf(&mut bytes).await?;
         println!("got request:\n  length: {}", request_length);
@@ -76,7 +75,7 @@ impl HttpServer {
         request.parse(Bytes::from(bytes))?;
 
         println!(
-            "  method: {}\n  path: {}\n  version: HTTP/{}",
+            "  method: {:?}\n  path: {}\n  version: HTTP/{}",
             request.method.unwrap(),
             request.path.unwrap(),
             request.version.unwrap()
@@ -105,43 +104,3 @@ impl HttpServer {
         Ok(())
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use reqwest::StatusCode;
-//     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-//     #[tokio::test]
-//     async fn test_server_listen_and_respond() {
-//         let server_task = tokio::spawn(async {
-//             let mut server = HttpServer::new();
-//             server
-//                 .listen(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20241))
-//                 .await
-//                 .unwrap();
-//         });
-
-//         // Wait for the server to start listening
-//         tokio::time::sleep(Duration::from_secs(1)).await;
-
-//         let response = reqwest::get("http://localhost:20241").await.unwrap();
-//         assert_eq!(response.status(), StatusCode::OK);
-//         assert_eq!(response.text().await.unwrap(), "hello world");
-
-//         // Stop the server
-//         server_task.abort();
-//     }
-
-//     #[tokio::test]
-//     async fn test_server_listen_blocking_and_respond() {
-//         let mut server = HttpServer::new();
-//         server
-//             .listen_blocking(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20242))
-//             .unwrap();
-
-//         let response = reqwest::get("http://localhost:20242").await.unwrap();
-//         assert_eq!(response.status(), StatusCode::OK);
-//         assert_eq!(response.text().await.unwrap(), "hello world");
-//     }
-// }
