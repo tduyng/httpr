@@ -117,4 +117,66 @@ mod tests {
             b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
         )
     }
+
+    #[test]
+    fn response_with_different_status_code() {
+        let mut response = HttpResponse::new();
+        response.status_code(StatusCode::NotFound);
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn response_with_different_content_type() {
+        let mut response = HttpResponse::new();
+        response.content_type("application/json");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: application/json\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn response_with_custom_headers() {
+        let mut response = HttpResponse::new();
+        response.set_header("x-custom-header", "custom-value");
+        assert_eq!(
+               response.build(),
+               b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\nx-custom-header: custom-value\r\n\r\n"
+           )
+    }
+
+    #[test]
+    fn response_with_body_content() {
+        let mut response = HttpResponse::new();
+        response.write(b"hello");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: text/plain\r\n\r\nhello"
+        )
+    }
+
+    #[test]
+    fn modify_response_body() {
+        let mut response = HttpResponse::new();
+        response.write(b"hello");
+        response.write(b" world");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nContent-Type: text/plain\r\n\r\nhello world"
+        )
+    }
+
+    #[test]
+    fn clear_response_body() {
+        let mut response = HttpResponse::new();
+        response.write(b"hello");
+        response.clear();
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
+        )
+    }
 }
