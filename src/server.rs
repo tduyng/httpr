@@ -5,15 +5,19 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    runtime,
     sync::Mutex,
 };
 
-use crate::{find_request_path, MiddlewareContext, Request, Response, Route};
+use crate::{find_request_path, Context, Request, Response, Route};
 
-#[derive(Default, Debug)]
 pub struct Server {
     routes: Arc<Mutex<Vec<Route>>>,
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Server::new()
+    }
 }
 
 impl Server {
@@ -25,11 +29,6 @@ impl Server {
 
     pub async fn add_route(&self, route: Route) {
         self.routes.lock().await.push(route);
-    }
-
-    pub fn listen_blocking(&mut self, address: SocketAddr) -> Result<()> {
-        let rt = runtime::Runtime::new()?;
-        rt.block_on(self.listen(address))
     }
 
     pub async fn listen(&mut self, address: SocketAddr) -> Result<()> {
@@ -52,14 +51,17 @@ impl Server {
 
         let mut request = Request::new();
         request.parse(Bytes::from(bytes))?;
+        let request_method = request.method;
+        let response = Response::default();
+        Self::debug_request(&mut request);
 
         let mut middlewares = Vec::new();
         for route in routes.lock().await.iter() {
             if let Some(method) = route.method {
-                if Some(method) != request.method {
+                if Some(method) != request_method {
                     continue;
                 }
-            } else if request.method.is_some() {
+            } else if request_method.is_some() {
                 continue;
             }
 
@@ -67,21 +69,16 @@ impl Server {
                 middlewares.push((route.clone(), request_path.clone()));
             }
         }
-
-        let mut response = Response::default();
-        response.set_header("x-powered-by", "rhttp");
-        Self::debug_request(&mut request);
-        let ctx = Arc::new(Mutex::new(MiddlewareContext::new(request, response)));
+        let mut ctx = Context::from(request, response);
 
         let mut err = false;
         for (route, path) in middlewares {
             {
-                let mut x = ctx.lock().await;
-                x.params = path.params.clone();
+                ctx.params = path.params;
             }
 
-            let handler = route.handler.clone();
-            let fut = handler(ctx.clone());
+            let handler = route.handler;
+            let fut = handler(&mut ctx);
 
             if let Err(e) = fut.await {
                 err = true;
@@ -89,20 +86,19 @@ impl Server {
                 break;
             }
 
-            if ctx.lock().await.has_ended() {
+            if ctx.has_ended() {
                 break;
             }
         }
 
         if err {
-            let mut ctx = ctx.lock().await;
             ctx.response.clear();
-            ctx.response.write(b"internal server error");
+            ctx.response.write_body(b"internal server error");
             ctx.response.status_code(StatusCode::InternalServerError);
         }
 
-        if !ctx.lock().await.is_raw() {
-            socket.write_all(&ctx.lock().await.response.build()).await?;
+        if !ctx.is_raw() {
+            socket.write_all(&ctx.response.build()).await?;
         }
 
         Ok(())
@@ -111,10 +107,11 @@ impl Server {
     fn debug_request(request: &mut Request) {
         println!("Got request:");
         println!("  Method: {:?}", &request.method);
-        println!("  Path: {}", request.path.as_mut().unwrap());
+        println!("  Path: {}", &request.path.as_ref().unwrap());
         println!("  Version: HTTP/{}", &request.version.unwrap_or(0));
         println!("  Headers:");
-        for (header, value) in request.headers.iter() {
+        let headers = &mut request.headers.clone();
+        for (header, value) in headers.iter() {
             println!("    \"{}\": \"{}\"", header, std::str::from_utf8(value).unwrap_or(""));
         }
         if !&request.body.is_empty() {

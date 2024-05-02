@@ -4,7 +4,7 @@ use std::collections::{btree_map, BTreeMap};
 
 use crate::{tokens, HeaderError, RequestError};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RequestHeaders {
     headers: BTreeMap<String, Vec<u8>>,
 }
@@ -16,7 +16,7 @@ impl RequestHeaders {
         }
     }
 
-    pub fn iter(&self) -> btree_map::Iter<String, Vec<u8>> {
+    pub fn iter(&mut self) -> btree_map::Iter<String, Vec<u8>> {
         self.headers.iter()
     }
 
@@ -75,7 +75,7 @@ impl TryFrom<&str> for Method {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Request {
     pub method: Option<Method>,
     pub path: Option<String>,

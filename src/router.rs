@@ -1,13 +1,13 @@
 use anyhow::Result;
-use std::{collections::BTreeMap, fmt::Debug, future::Future, sync::Arc};
-use tokio::{net::TcpStream, sync::Mutex, task::JoinHandle};
+use std::{collections::BTreeMap, fmt::Debug, future::Future, pin::Pin, sync::Arc};
+use tokio::net::TcpStream;
 
 use crate::{Method, Request, Response, Server};
 
-pub trait HandlerFn: Fn(MiddlewareCtx) -> JoinHandle<Result<()>> + Send + Sync + 'static {}
+pub trait HandlerFn: Fn(&mut Context) -> Handler + Send + Sync + 'static {}
+pub type Handler = Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'static>>;
 
-pub type MiddlewareCtx = Arc<Mutex<MiddlewareContext>>;
-pub struct MiddlewareContext {
+pub struct Context {
     pub request: Request,
     pub response: Response,
     pub params: BTreeMap<String, RequestPathParams>,
@@ -16,8 +16,25 @@ pub struct MiddlewareContext {
     raw: bool,
 }
 
-impl MiddlewareContext {
-    pub fn new(request: Request, response: Response) -> Self {
+impl Default for Context {
+    fn default() -> Self {
+        Context::new()
+    }
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            socket: None,
+            request: Request::new(),
+            response: Response::new(),
+            ended: false,
+            params: BTreeMap::new(),
+            raw: false,
+        }
+    }
+
+    pub fn from(request: Request, response: Response) -> Self {
         Self {
             socket: None,
             request,

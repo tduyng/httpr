@@ -1,9 +1,10 @@
 mod error;
+mod macros;
 mod request;
 mod response;
 mod router;
 mod server;
-pub mod tokens;
+mod tokens;
 pub use error::*;
 pub use httpstatus::{StatusClass, StatusCode};
 pub use request::*;

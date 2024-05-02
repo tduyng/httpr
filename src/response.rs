@@ -12,12 +12,7 @@ pub struct Response {
 
 impl Default for Response {
     fn default() -> Self {
-        Self {
-            status_code: StatusCode::Ok,
-            content_type: "text/plain".to_string(),
-            headers: BTreeMap::new(),
-            body: BytesMut::new(),
-        }
+        Response::new()
     }
 }
 
@@ -29,7 +24,12 @@ impl From<Response> for Vec<u8> {
 
 impl Response {
     pub fn new() -> Self {
-        Response { ..Default::default() }
+        Self {
+            status_code: StatusCode::Ok,
+            content_type: "text/plain".to_string(),
+            headers: BTreeMap::new(),
+            body: BytesMut::new(),
+        }
     }
 
     pub fn status_code(&mut self, status: StatusCode) -> &mut Self {
@@ -42,7 +42,7 @@ impl Response {
         self
     }
 
-    pub fn write(&mut self, src: &[u8]) {
+    pub fn write_body(&mut self, src: &[u8]) {
         self.body.put_slice(src)
     }
 
@@ -65,7 +65,6 @@ impl Response {
         response.put(self.status_code.reason_phrase().as_bytes());
         response.put_slice(b"\r\n");
 
-        // parse headers
         let body = self.body.clone();
         let content_length = body.len();
 
@@ -101,7 +100,7 @@ mod tests {
     #[test]
     fn build_basic_response() {
         let mut response = Response::new();
-        response.write(b"hi");
+        response.write_body(b"hi");
         response.set_header("x-some-test-header", "some-value");
         assert_eq!(
             response.build(),
@@ -152,7 +151,7 @@ mod tests {
     #[test]
     fn response_with_body_content() {
         let mut response = Response::new();
-        response.write(b"hello");
+        response.write_body(b"hello");
         assert_eq!(
             response.build(),
             b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: text/plain\r\n\r\nhello"
@@ -162,8 +161,8 @@ mod tests {
     #[test]
     fn modify_response_body() {
         let mut response = Response::new();
-        response.write(b"hello");
-        response.write(b" world");
+        response.write_body(b"hello");
+        response.write_body(b" world");
         assert_eq!(
             response.build(),
             b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nContent-Type: text/plain\r\n\r\nhello world"
@@ -173,7 +172,7 @@ mod tests {
     #[test]
     fn clear_response_body() {
         let mut response = Response::new();
-        response.write(b"hello");
+        response.write_body(b"hello");
         response.clear();
         assert_eq!(
             response.build(),
