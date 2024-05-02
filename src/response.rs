@@ -1,110 +1,182 @@
-use bytes::BytesMut;
-use std::{
-    fmt::{self, Write},
-    sync::Arc,
-};
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
-use tracing::{error, info, warn};
+use bytes::{BufMut, BytesMut};
+use httpstatus::StatusCode;
+use std::collections::BTreeMap;
 
-use crate::error::ServerError;
-
+#[derive(Debug)]
 pub struct Response {
-    status_code: u32,
-    status_message: String,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
+    status_code: StatusCode,
+    content_type: String,
+    headers: BTreeMap<String, String>,
+    body: BytesMut,
 }
 
 impl Default for Response {
     fn default() -> Self {
-        Self::new()
+        Response::new()
+    }
+}
+
+impl From<Response> for Vec<u8> {
+    fn from(builder: Response) -> Self {
+        builder.build()
     }
 }
 
 impl Response {
     pub fn new() -> Self {
-        Response {
-            status_code: 200,
-            status_message: "OK".to_string(),
-            headers: Vec::new(),
-            body: Vec::new(),
+        Self {
+            status_code: StatusCode::Ok,
+            content_type: "text/plain".to_string(),
+            headers: BTreeMap::new(),
+            body: BytesMut::new(),
         }
     }
 
-    pub fn status_code(mut self, code: u32, message: &str) -> Self {
-        self.status_code = code;
-        self.status_message = message.to_string();
+    pub fn status_code(&mut self, status: StatusCode) -> &mut Self {
+        self.status_code = status;
         self
     }
 
-    pub fn header(mut self, name: &str, val: &str) -> Self {
-        self.headers.push((name.to_string(), val.to_string()));
+    pub fn content_type(&mut self, content_type: &str) -> &mut Self {
+        self.content_type = content_type.to_string();
         self
     }
 
-    pub fn body(mut self, body: &[u8]) -> Self {
-        self.body = body.to_vec();
-        self
+    pub fn write_body(&mut self, src: &[u8]) {
+        self.body.put_slice(src)
     }
 
-    pub fn body_str(mut self, body: &str) -> Self {
-        self.body = body.as_bytes().to_vec();
-        self
+    pub fn clear(&mut self) {
+        self.body.clear()
     }
 
-    pub async fn write_response(&self, stream: Arc<Mutex<TcpStream>>) -> Result<(), ServerError> {
-        let mut buf = BytesMut::new();
-        _ = write!(
-            FastWrite(&mut buf),
-            "HTTP/1.1 {} {}\r\n",
-            self.status_code,
-            self.status_message
-        )
-        .map_err(|e| {
-            warn!("Failed to write status line: {}", e);
-            Ok::<fmt::Error, ServerError>(e)
-        });
-
-        for (name, value) in &self.headers {
-            _ = write!(FastWrite(&mut buf), "{}: {}\r\n", name, value).map_err(|e| {
-                warn!("Failed to write header: {}", e);
-                Ok::<fmt::Error, ServerError>(e)
-            });
+    pub fn set_header(&mut self, key: &str, value: &str) -> Option<()> {
+        match self.headers.insert(key.to_string(), value.to_string()) {
+            Some(_) => Some(()),
+            _ => None,
         }
+    }
 
-        _ = write!(
-            FastWrite(&mut buf),
-            "Content-Length: {}\r\n",
-            self.body.len()
-        )
-        .map_err(|e| {
-            warn!("Failed to write content length: {}", e);
-            Ok::<fmt::Error, ServerError>(e)
-        });
+    pub fn build(&self) -> Vec<u8> {
+        let mut response = b"HTTP/1.1 ".to_vec();
 
-        _ = write!(FastWrite(&mut buf), "\r\n").map_err(|e| {
-            warn!("Failed to write new line after headers: {}", e);
-            Ok::<fmt::Error, ServerError>(e)
-        });
+        response.put_slice(self.status_code.as_u16().to_string().as_bytes());
+        response.put_slice(b" ");
+        response.put(self.status_code.reason_phrase().as_bytes());
+        response.put_slice(b"\r\n");
 
-        buf.extend_from_slice(&self.body);
+        let body = self.body.clone();
+        let content_length = body.len();
 
-        let mut stream = stream.lock().await;
-        stream.write_all(&buf).await.map_err(|e| {
-            error!("Failed to write response: {}", e);
-            ServerError::IoError(e)
-        })?;
+        let content_type = if !self.content_type.is_empty() {
+            self.content_type.clone()
+        } else {
+            "text/plain".to_string()
+        };
 
-        info!("Response sent successfully");
-        Ok(())
+        let mut headers = self.headers.clone();
+        headers.insert("Content-Type".to_string(), content_type);
+        headers.insert("Content-Length".to_string(), content_length.to_string());
+        for (key, val) in &headers {
+            response.put_slice(key.as_bytes());
+            response.put_slice(b": ");
+            response.put_slice(val.as_bytes());
+            response.put_slice(b"\r\n");
+        }
+        response.put_slice(b"\r\n");
+
+        // parse body
+        let body = self.body.clone();
+        response.put(body);
+
+        response
     }
 }
 
-struct FastWrite<'a>(&'a mut BytesMut);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl<'a> fmt::Write for FastWrite<'a> {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.0.extend_from_slice(s.as_bytes());
-        Ok(())
+    #[test]
+    fn build_basic_response() {
+        let mut response = Response::new();
+        response.write_body(b"hi");
+        response.set_header("x-some-test-header", "some-value");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: text/plain\r\nx-some-test-header: some-value\r\n\r\nhi"
+        )
+    }
+
+    #[test]
+    fn empty_response() {
+        let response = Response::new();
+        println!("{}", std::str::from_utf8(&response.build()).unwrap());
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn response_with_different_status_code() {
+        let mut response = Response::new();
+        response.status_code(StatusCode::NotFound);
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn response_with_different_content_type() {
+        let mut response = Response::new();
+        response.content_type("application/json");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: application/json\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn response_with_custom_headers() {
+        let mut response = Response::new();
+        response.set_header("x-custom-header", "custom-value");
+        assert_eq!(
+               response.build(),
+               b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\nx-custom-header: custom-value\r\n\r\n"
+           )
+    }
+
+    #[test]
+    fn response_with_body_content() {
+        let mut response = Response::new();
+        response.write_body(b"hello");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: text/plain\r\n\r\nhello"
+        )
+    }
+
+    #[test]
+    fn modify_response_body() {
+        let mut response = Response::new();
+        response.write_body(b"hello");
+        response.write_body(b" world");
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nContent-Type: text/plain\r\n\r\nhello world"
+        )
+    }
+
+    #[test]
+    fn clear_response_body() {
+        let mut response = Response::new();
+        response.write_body(b"hello");
+        response.clear();
+        assert_eq!(
+            response.build(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n"
+        )
     }
 }
