@@ -40,6 +40,7 @@ pub enum Method {
     DELETE,
     TRACE,
     CONNECT,
+    ANY,
 }
 
 impl fmt::Display for Method {
@@ -53,6 +54,7 @@ impl fmt::Display for Method {
             Method::DELETE => "DELETE",
             Method::TRACE => "TRACE",
             Method::CONNECT => "CONNECT",
+            Method::ANY => "ANY",
         };
         write!(f, "{}", method_str)
     }
@@ -70,49 +72,46 @@ impl TryFrom<&str> for Method {
             "DELETE" => Ok(Method::DELETE),
             "TRACE" => Ok(Method::TRACE),
             "CONNECT" => Ok(Method::CONNECT),
+            "ANY" => Ok(Method::ANY),
             _ => Err("invalid method"),
         }
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Request {
-    pub method: Option<Method>,
-    pub path: Option<String>,
-    pub version: Option<u8>,
+    pub method: Method,
+    pub path: String,
+    pub version: u8,
     pub headers: RequestHeaders,
     pub body: Vec<u8>,
 }
 
 impl Request {
-    pub fn new() -> Self {
-        Request {
-            method: None,
-            path: None,
-            version: None,
-            headers: RequestHeaders::new(),
-            body: vec![],
-        }
-    }
-
-    pub fn parse(&mut self, buf: Bytes) -> Result<(), RequestError> {
+    pub fn new(buf: Bytes) -> Result<Self, RequestError> {
         let mut bytes = buf;
-        self.method = Some(
-            Request::parse_token(&mut bytes)?
-                .as_str()
-                .try_into()
-                .map_err(|_| RequestError::Method)?,
-        );
-        self.path = Some(Request::parse_uri(&mut bytes)?);
-        self.version = Some(Request::parse_version(&mut bytes)?);
+        let method = Request::parse_token(&mut bytes)?
+            .as_str()
+            .try_into()
+            .map_err(|_| RequestError::Method)
+            .unwrap_or(Method::GET);
+        let path = Request::parse_uri(&mut bytes).unwrap_or_default();
+        let version = Request::parse_version(&mut bytes).unwrap_or(1);
         Request::parse_new_line(&mut bytes)?;
-        Request::parse_headers(&mut bytes, &mut self.headers)?;
-        Request::parse_body(&mut bytes, &self.headers)?;
+        let headers = Request::parse_headers(&mut bytes)?;
+        let body = Request::parse_body(&mut bytes, &headers)?;
 
-        Ok(())
+        Ok(Request {
+            method,
+            path,
+            version,
+            headers,
+            body,
+        })
     }
 
-    pub fn parse_headers(bytes: &mut Bytes, headers: &mut RequestHeaders) -> Result<(), RequestError> {
+    pub fn parse_headers(bytes: &mut Bytes) -> Result<RequestHeaders, RequestError> {
+        let mut headers = RequestHeaders::new();
         let mut parse_header = || -> Result<(), RequestError> {
             let header_name = Request::parse_header_name(bytes)?;
             Request::parse_space(bytes)?;
@@ -127,7 +126,7 @@ impl Request {
             }
         }
 
-        Ok(())
+        Ok(headers)
     }
 
     fn parse_new_line(bytes: &mut Bytes) -> Result<(), RequestError> {
@@ -251,52 +250,37 @@ mod tests {
 
     #[test]
     fn parse_basic_requests() {
-        let mut request = Request::new();
+        let mut request = Request::new(Bytes::from_static(b"GET /test HTTP/1.1\r\n\r\n")).expect("parsing request");
 
-        request
-            .parse(Bytes::from_static(b"GET /test HTTP/1.1\r\n\r\n"))
-            .expect("parsing request");
-
-        assert_eq!(request.version, Some(1));
+        assert_eq!(request.version, 1);
         assert_eq!(request.method, Some(Method::GET));
-        assert_eq!(request.path, Some(String::from("/test")));
+        assert_eq!(request.path, String::from("/test"));
     }
 
     #[test]
     fn accept_only_newline() {
-        let mut request = Request::new();
+        let request = Request::new(Bytes::from_static(b"GET /test HTTP/1.1\r\n\r\n")).expect("parsing request");
 
-        request
-            .parse(Bytes::from_static(b"GET /test HTTP/1.1\r\n\r\n"))
-            .expect("parsing request");
-
-        assert_eq!(request.version, Some(1));
+        assert_eq!(request.version, 1);
         assert_eq!(request.method, Some(Method::GET));
-        assert_eq!(request.path, Some(String::from("/test")));
+        assert_eq!(request.path, String::from("/test"));
     }
 
     #[test]
     fn do_not_accept_only_cr() {
-        let mut request = Request::new();
-
-        request
-            .parse(Bytes::from_static(b"GET /test HTTP/1.1\r"))
-            .expect_err("parsing request");
+        Request::new(Bytes::from_static(b"GET /test HTTP/1.1\r")).expect_err("parsing request");
     }
 
     #[test]
     fn parse_request_with_headers() {
-        let mut request = Request::new();
+        let request = Request::new(Bytes::from_static(
+            b"GET /test HTTP/1.1\r\nContent-Type: application/json\r\nAuthorization: Bearer token\r\n\r\n",
+        ))
+        .expect("parsing request");
 
-        request
-            .parse(Bytes::from_static(
-                b"GET /test HTTP/1.1\r\nContent-Type: application/json\r\nAuthorization: Bearer token\r\n\r\n",
-            ))
-            .expect("parsing request");
-
-        assert_eq!(request.version, Some(1));
+        assert_eq!(request.version, 1);
         assert_eq!(request.method, Some(Method::GET));
-        assert_eq!(request.path, Some(String::from("/test")));
+        assert_eq!(request.path, String::from("/test"));
         assert_eq!(request.headers.iter().count(), 2);
         assert_eq!(
             request.headers.iter().find(|(k, _)| k.as_str() == "Content-Type"),
@@ -310,17 +294,14 @@ mod tests {
 
     #[test]
     fn parse_request_with_body() {
-        let mut request = Request::new();
+        let request = Request::new(Bytes::from_static(
+            b"POST /test HTTP/1.1\r\nContent-Length: 11\r\n\r\nHello World",
+        ))
+        .expect("parsing request");
 
-        request
-            .parse(Bytes::from_static(
-                b"POST /test HTTP/1.1\r\nContent-Length: 11\r\n\r\nHello World",
-            ))
-            .expect("parsing request");
-
-        assert_eq!(request.version, Some(1));
+        assert_eq!(request.version, 1);
         assert_eq!(request.method, Some(Method::POST));
-        assert_eq!(request.path, Some(String::from("/test")));
+        assert_eq!(request.path, String::from("/test"));
         assert_eq!(request.headers.iter().count(), 1);
         assert_eq!(
             request.headers.iter().find(|(k, _)| k.as_str() == "Content-Length"),
@@ -330,28 +311,16 @@ mod tests {
 
     #[test]
     fn parse_request_with_invalid_method() {
-        let mut request = Request::new();
-
-        _ = request
-            .parse(Bytes::from_static(b"INVALID /test HTTP/1.1\r\n\r\n"))
-            .is_err();
+        _ = Request::new(Bytes::from_static(b"INVALID /test HTTP/1.1\r\n\r\n")).is_err();
     }
 
     #[test]
     fn parse_request_with_invalid_uri() {
-        let mut request = Request::new();
-
-        _ = request
-            .parse(Bytes::from_static(b"GET /test!@# HTTP/1.1\r\n\r\n"))
-            .is_err();
+        _ = Request::new(Bytes::from_static(b"GET /test!@# HTTP/1.1\r\n\r\n")).is_err();
     }
 
     #[test]
     fn parse_request_with_invalid_version() {
-        let mut request = Request::new();
-
-        _ = request
-            .parse(Bytes::from_static(b"GET /test HTTP/1.0\r\n\r\n"))
-            .is_err();
+        _ = Request::new(Bytes::from_static(b"GET /test HTTP/1.0\r\n\r\n")).is_err();
     }
 }
